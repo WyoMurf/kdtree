@@ -2026,63 +2026,28 @@ typedef struct KDPpriority
 } KDPriority;
 
 
+/*
+ * Returns the SQUARED edge-to-edge distance from query point Xq to the
+ * bounding box of elem.  Using squared distance throughout the nearest-
+ * neighbor search avoids expensive sqrt/hypot calls and keeps the metric
+ * consistent with coord_dist (used by bounds_overlap_ball for pruning).
+ * The final results are converted back to actual distance in kd_neighbor.
+ */
 static double KDdist(kd_box Xq, KDElem *elem)
 {
+	double dx = 0.0, dy = 0.0;
 
-	double hypot();
-	/* The following calcs edge-to-edge distance on bounding boxes. I could
-	   imagine that this would not be good enough for stuff like all-angle
-	   paths. but for totally orthogonal geoms, this would mostly suffice. */
-	if( Xq[KD_LEFT] > elem->size[KD_RIGHT] ) /* off left side */
-	{
-		if(Xq[KD_TOP] < elem->size[KD_BOTTOM]) /* ob2 is in ul quad */
-		{/* dist (Xq[KD_LEFT],Xq[KD_TOP])->(elem->size[KD_BOTTOM,RIGHT])*/
-			return hypot((double)(Xq[KD_LEFT]-elem->size[KD_RIGHT]),
-						 (double)(Xq[KD_TOP]-elem->size[KD_BOTTOM])); 
-		}
-		else if(Xq[KD_BOTTOM] > elem->size[KD_TOP]) /* ob2 is in ll quad */
-		{
-			; /* dist (Xq[KD_LEFT],Xq[KD_BOTTOM])->(elem->size[KD_TOP,RIGHT])*/
-			return hypot((double)(Xq[KD_LEFT]-elem->size[KD_RIGHT]),
-						 (double)(Xq[KD_BOTTOM]-elem->size[KD_TOP])); 
-		}
-		else  /* shadowed to left */
-			return (double)(Xq[KD_LEFT]-elem->size[KD_RIGHT]);
-	}
-	else if (Xq[KD_RIGHT] < elem->size[KD_LEFT])
-	{
-		if(Xq[KD_TOP] < elem->size[KD_BOTTOM]) /* ob2 is in ur quad */
-		{
-			; /* dist (Xq[KD_RIGHT],Xq[KD_TOP])->(elem->size[KD_BOTTOM,LEFT])*/
-			return hypot((double)(Xq[KD_RIGHT]-elem->size[KD_LEFT]),
-						 (double)(Xq[KD_TOP]-elem->size[KD_BOTTOM])); 
-		}
-		else if(Xq[KD_BOTTOM] > elem->size[KD_TOP]) /* ob2 is in lr quad */
-		{
-			; /* dist (Xq[KD_RIGHT],Xq[KD_BOTTOM])->(elem->size[KD_TOP,LEFT])*/
-			return hypot((double)(Xq[KD_RIGHT]-elem->size[KD_LEFT]),
-						 (double)(Xq[KD_BOTTOM]-elem->size[KD_TOP])); 
-		}
-		else  /* shadowed to right */
-			return (double)(elem->size[KD_LEFT]-Xq[KD_RIGHT]);
-	}
+	if( Xq[KD_LEFT] > elem->size[KD_RIGHT] )
+		dx = (double)(Xq[KD_LEFT] - elem->size[KD_RIGHT]);
+	else if( Xq[KD_RIGHT] < elem->size[KD_LEFT] )
+		dx = (double)(elem->size[KD_LEFT] - Xq[KD_RIGHT]);
+
+	if( Xq[KD_BOTTOM] > elem->size[KD_TOP] )
+		dy = (double)(Xq[KD_BOTTOM] - elem->size[KD_TOP]);
 	else if( Xq[KD_TOP] < elem->size[KD_BOTTOM] )
-		return (double)(elem->size[KD_BOTTOM]-Xq[KD_TOP]);
-	else if( Xq[KD_BOTTOM] > elem->size[KD_TOP] )
-		return (double)(Xq[KD_BOTTOM]-elem->size[KD_TOP]);
-	else
-		return 0.0;
-	/*   Well, this is a cheap backup , but pretty simplistic 
-	x1 = (Xq[KD_LEFT] + Xq[KD_RIGHT])/2;
-	y1 = (Xq[KD_BOTTOM] + Xq[KD_TOP])/2;
-	x2 = (elem->size[KD_LEFT] + elem->size[KD_RIGHT])/2;
-	y2 = (elem->size[KD_BOTTOM] + elem->size[KD_TOP])/2;
-	d = (x2-x1);
-	d *= d;
-	d2 = (y2-y1);
-	d2 *= d2;
-	d += d2;
-	return d; */
+		dy = (double)(elem->size[KD_BOTTOM] - Xq[KD_TOP]);
+
+	return dx*dx + dy*dy;
 }
 
 static double coord_dist(long x, long y)
@@ -2327,10 +2292,11 @@ static int  kd_neighbor(KDElem *node, kd_box Xq, int m, KDPriority *list, kd_box
 	}
 	FREE(realGen->stk);
 	FREE(realGen);
-	/* we have to change KDElem * to kd_generic and give the user something back
-	 he can 'identify' with. */
+	/* Convert squared distances back to actual distances, and change
+	   KDElem * to kd_generic for the user's results. */
 	for(p=0;p<m;p++)
 	{
+		list[p].dist = sqrt(list[p].dist);
 		list[p].elem = (KDElem *)list[p].elem->item;
 	}
 	return kd_data_tries;
@@ -2355,7 +2321,7 @@ int kd_nearest(kd_tree tree, int x, int y, int m, kd_priority **alist)
 	for(i=0;i<KD_BOX_MAX;i++)
 	{
 		Bp[i] = MAXINT;
-		Bn[i] = 1<<30;
+		Bn[i] = MININT;
 	}
 	return kd_neighbor(realTree->tree,Xq,m,*list,Bp,Bn);
 }

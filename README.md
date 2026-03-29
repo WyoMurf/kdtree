@@ -96,8 +96,11 @@ TO DO:
 
 4. Valgrind comes up with all sorts of illegal reads and some illegal
    writes. All are quite mysterious. Need to clean all this up.
-   NOTE: Many valgrind issues were likely caused by the stale path_length
-   bug (fixed in TODO #1) and K&R declaration mismatches (fixed in TODO #2).
+   NOTE: Many issues were caused by the stale path_length bug (fixed in
+   TODO #1), K&R declaration mismatches (fixed in TODO #2), and a metric
+   mismatch in kd_nearest where KDdist returned actual distance but
+   bounds_overlap_ball used squared distance (now fixed -- KDdist uses
+   squared distance internally, converted back to actual at the end).
    Re-run valgrind to see what remains.
 
 5. ~~It would probably be nice to use configure to build from

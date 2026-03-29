@@ -116,20 +116,8 @@ int main(int argc, char **argv)
 
     printf("[nearest] Built tree with %d boxes\n", KD_BOXES);
 
-    /*
-     * Note: kd_nearest has a known metric mismatch between KDdist (which
-     * returns actual distance via hypot) and bounds_overlap_ball (which
-     * uses squared distance via coord_dist). This causes overly aggressive
-     * pruning, so kd_nearest may not always find the true m closest items.
-     * See README TODO #4 for details.
-     *
-     * We test what we can: results should be sorted, the function should
-     * not crash, and it should return reasonable results for most queries.
-     */
-
     /* Test with various neighbor counts */
     for (m = 1; m <= MAX_NEIGHBORS; m *= 2) {
-	int brute_mismatches = 0;
 	for (q = 0; q < NUM_QUERIES; q++) {
 	    int qx = (random() % RANGE_SPAN) + MIN_RANGE;
 	    int qy = (random() % RANGE_SPAN) + MIN_RANGE;
@@ -149,26 +137,23 @@ int main(int argc, char **argv)
 		}
 	    }
 
-	    /* Brute-force comparison (advisory — known metric mismatch) */
+	    /* Brute-force: verify kd_nearest found the true m closest */
 	    for (i = 0; i < KD_BOXES; i++) {
 		brute_dists[i] = box_dist(qx, qy, boxes[i]);
 	    }
 	    qsort(brute_dists, KD_BOXES, sizeof(double), cmp_double);
 
 	    if (list[m-1].dist > brute_dists[m-1] + 1e-6) {
-		brute_mismatches++;
+		fprintf(stderr, "[nearest] FAIL: kd_nearest missed closer item at m=%d q=%d "
+			"(kd furthest=%g, brute m-th=%g)\n",
+			m, q, list[m-1].dist, brute_dists[m-1]);
+		free(list);
+		return 1;
 	    }
 
 	    free(list);
 	}
-	if (brute_mismatches > 0) {
-	    printf("[nearest] m=%d: %d queries, %d had suboptimal results "
-		   "(known metric mismatch in bounds_overlap_ball)\n",
-		   m, NUM_QUERIES, brute_mismatches);
-	} else {
-	    printf("[nearest] m=%d: %d queries passed (exact match with brute force)\n",
-		   m, NUM_QUERIES);
-	}
+	printf("[nearest] m=%d: %d queries passed\n", m, NUM_QUERIES);
     }
 
     /* Edge case: query point inside a box (distance should be 0) */
@@ -178,12 +163,13 @@ int main(int argc, char **argv)
 	int visited = kd_nearest(tree, qx, qy, 1, &list);
 	(void)visited;
 	if (list[0].dist > 1e-9) {
-	    printf("[nearest] Edge case (point inside box): nearest dist=%g "
-		   "(expected 0, known metric mismatch)\n", list[0].dist);
-	} else {
-	    printf("[nearest] Edge case (point inside box): PASS\n");
+	    fprintf(stderr, "[nearest] FAIL: query inside box[0] but nearest dist=%g\n",
+		    list[0].dist);
+	    free(list);
+	    return 1;
 	}
 	free(list);
+	printf("[nearest] Edge case (point inside box): PASS\n");
     }
 
     printf("[nearest] All tests passed. PASS\n");
