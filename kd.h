@@ -99,10 +99,10 @@ extern char *kd_err_string(void);
 extern kd_tree kd_create(void);
   /* Creates a new empty kd-tree */
 
-extern kd_tree kd_build(int (*itemfunc)(), kd_generic );
+extern kd_tree kd_build(int (*itemfunc)(kd_generic arg, kd_generic *val, kd_box size), kd_generic );
   /* Makes a new kd-tree from a given set of items */
 
-extern void kd_destroy(kd_tree this_one, void (*delfunc)());
+extern void kd_destroy(kd_tree this_one, void (*delfunc)(kd_generic item));
   /* Destroys an existing k-d tree */
 
 extern kd_status kd_is_member(kd_tree , kd_generic , kd_box );

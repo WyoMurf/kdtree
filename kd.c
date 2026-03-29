@@ -77,755 +77,31 @@
  *
  */
 #endif
-#ifndef PORT_H
-#define PORT_H
-
-#ifdef SABER
-#define volatile
-#endif
-
-#ifdef hp7ux
-#define HAS_STDARG
-#endif
-
-#ifdef AIX
-#define HAS_STDARG
-#endif
-
-#ifdef LINUX
-#define HAS_STDARG
-#endif
-/*
- * int32 should be defined as the most economical sized integer capable of
- * holding a 32 bit quantity
- * int16 should be similarly defined
- */
-
-/* XXX hack */
-#ifndef MACHDEP_INCLUDED
-#define MACHDEP_INCLUDED
-#ifdef vax
-typedef int int32;
-typedef short int16;
-#else
-     /* Ansi-C promises that these definitions should always work */
-typedef long int32;
-typedef int int16;
-#endif /* vax */
-#endif /* MACHDEP_INCLUDED */
-
-
-#ifndef __STDC__
-#ifndef __DATE__
-#ifdef CUR_DATE
-#define __DATE__	CUR_DATE
-#else
-#define __DATE__	"unknown-date"
-#endif /* CUR_DATE */
-#endif /* __DATE__ */
-
-#ifndef __TIME__
-#ifdef CUR_TIME
-#define __TIME__	CUR_TIME
-#else
-#define __TIME__	"unknown-time"
-#endif /* CUR_TIME */
-#endif /* __TIME__ */
-#endif /* __STDC__ */
-
-#ifdef sun386
-#define PORTAR
-#endif
-
+/* Modern standard headers — replaces the old OctTools port.h portability layer */
 #include <stdio.h>
-#include <ctype.h>
-#include <sys/types.h>
-#undef HUGE
-#include <math.h>
-#include <signal.h>
-
-#if defined(ultrix)  /* { */
-#if defined(_SIZE_T_) /* { */
-#define ultrix4
-#else		     /* } else { */
-#if defined(SIGLOST) /* { */
-#define ultrix3
-#else                /* } else { */
-#define ultrix2
-#endif               /* } */
-#endif               /* } */
-#endif               /* } */
-
-#if defined(ultrix3) && defined(mips)
-extern double rint();
-extern double trunc();
-#endif
-
-#if defined(sun) && defined(FD_SETSIZE)
-#define sunos4
-#else
-#define sunos3
-#endif
-
-#if defined(sequent) || defined(news800)
-#define LACK_SYS5
-#endif
-
-#if defined(ultrix3) || defined(sunos4) || defined(_IBMR2)
-#define SIGNAL_FN	void
-#else
-/* sequent, ultrix2, 4.3BSD (vax, hp), sunos3 */
-#define SIGNAL_FN	int
-#endif
-
-/* Some systems have 'fixed' certain functions which used to be int */
-#if defined(ultrix) || defined(SABER) || defined(hpux) || defined(aiws) || defined(apollo) || defined(AIX) || defined(__STDC__)
-#define VOID_HACK void
-#else
-#define VOID_HACK int
-#endif
-
-#ifndef NULL
-#define NULL 0
-#endif /* NULL */
-
-/*
- * CHARBITS should be defined only if the compiler lacks "unsigned char".
- * It should be a mask, e.g. 0377 for an 8-bit machine.
- */
-
-#ifndef CHARBITS
-#	define	UNSCHAR(c)	((unsigned char)(c))
-#else
-#	define	UNSCHAR(c)	((c)&CHARBITS)
-#endif
-
-#define SIZET int
-
-#if defined(__STDC__) || defined(AIX)
-#define CONST const
-#define VOIDSTAR   void *
-#else
-#define CONST
-#define VOIDSTAR   char *
-#endif /* __STDC__ */
-
-
-/* Some machines fail to define some functions in stdio.h */
-#if !defined(__STDC__) && !defined(AIX)
-extern FILE *popen(), *tmpfile();
-extern int pclose();
-#ifndef clearerr		/* is a macro on many machines, but not all */
-extern VOID_HACK clearerr();
-#endif /* clearerr */
-#ifndef rewind
-extern VOID_HACK rewind();
-#endif /* rewind */
-#endif /* __STDC__ */
-
-
-/* most machines don't give us a header file for these */
-#if defined(__STDC__) || defined(AIX)
 #include <stdlib.h>
-#else
-#ifdef hpux
-extern int abort();
-extern void free(), exit(), perror();
-#else
-extern VOID_HACK abort(), free(), exit(), perror();
-#endif /* hpux */
-extern char *getenv(), *malloc(), *realloc(), *calloc();
-#ifdef aiws
-extern int sprintf();
-#else
-extern char *sprintf();
-#endif
-extern int system();
-extern double atof();
-extern long atol();
-extern int sscanf();
-#endif /* __STDC__ */
-
-
-/* some call it strings.h, some call it string.h; others, also have memory.h */
-#if defined(__STDC__) || defined(AIX)
 #include <string.h>
-#else
-/* ANSI C string.h -- 1/11/88 Draft Standard */
-#if defined(ultrix4)
-#include <strings.h>
-#else
-extern char *strcpy(), *strncpy(), *strcat(), *strncat(), *strerror();
-extern char *strpbrk(), *strtok(), *strchr(), *strrchr(), *strstr();
-extern int strcoll(), strxfrm(), strncmp(), strlen(), strspn(), strcspn();
-extern char *memmove(), *memccpy(), *memchr(), *memcpy(), *memset();
-extern int memcmp(), strcmp();
-#endif /* ultrix4 */
-#endif /* __STDC__ */
-
-#ifdef lint
-#undef putc			/* correct lint '_flsbuf' bug */
-#endif /* lint */
-
-/* a few extras */
-/* extern VOID_HACK srandom(); */
-#ifndef LINUX
-extern long random();
-#endif
-
-#if defined(ultrix3)
-extern unsigned sleep();
-#else
-#ifndef __GO32__					 /* lll */
-extern VOID_HACK sleep();
-#endif								 /* lll */
-#endif
-
-/* assertion macro */
-
-#ifndef assert
-#if defined(__STDC__) || defined(AIX)
+#include <math.h>
 #include <assert.h>
-#else
-#ifndef NDEBUG
-#define assert(ex) {\
-    if (! (ex)) {\
-	(void) fprintf(stderr, "Assertion failed: file %s, line %d\n",\
-	    __FILE__, __LINE__);\
-	(void) fflush(stdout);\
-	abort();\
-    }\
-}
-#else
-#define assert(ex) {;}
-#endif
-#endif
-#endif
-
-/* handle the various limits */
-#if defined(__STDC__) || defined(POSIX) || defined(AIX)
 #include <limits.h>
-#else
-#define USHRT_MAX	(~ (unsigned short int) 0)
-#define UINT_MAX	(~ (unsigned int) 0)
-#define ULONG_MAX	(~ (unsigned long int) 0)
-#define SHRT_MAX	((short int) (USHRT_MAX >> 1))
-#define INT_MAX		((int) (UINT_MAX >> 1))
-#define LONG_MAX	((long int) (ULONG_MAX >> 1))
-#endif
-
-#endif /* PORT_H */
+#include <stdarg.h>
 
 #include "kd.h"
 
-/* Function prototypes */
-
-/* Function Declarations */
-#include <setjmp.h>
-
-#define ERR_PKG_NAME	"errtrap"
-#undef EXTERN
-#define EXTERN
-#define NULLARGS ()
-
-EXTERN void errProgramName(char *progName);
-EXTERN void errCore(int flag);
-typedef void (*EH)(char *, int, char *);
-EXTERN void errPushHandler(EH hndlr);
-EXTERN void errPopHandler(void);
-void errRaise(char *pkg, int code, char *format, ...);
-void errPass(char *format, ... );
-
-#define ERR_IGNORE(expr)	\
-    {					\
-	if ( ! setjmp(errJmpBuf)) {	\
-	    errIgnPush();		\
-	    expr;			\
-	}				\
-	errIgnPop();			\
-    }
-extern jmp_buf errJmpBuf;
-EXTERN void errIgnPush(void);
-EXTERN void errIgnPop(void);
-EXTERN int errStatus(char **pkgNamePtr, int *codePtr, char **messagePtr);
-
-
-#include <stdarg.h>
-#ifndef UPRINTF_H
-#define UPRINTF_H
-
-
-extern char *uprintf_pkg_name;
-extern char *uprintf(char *buf, char *upf_fmt, ...);
-
-#endif /* UPRINTF */
-
-#define MAXSPEC	2048
-
-char *uprintf_pkg_name = "uprintf";
-static void defaultHandler();
-
-/* Types */
-#define UPF_INT		0
-#define UPF_LONG	1
-#define UPF_UINT	2
-#define UPF_ULONG	3
-#define UPF_FLOAT	4
-#define UPF_DOUBLE	5
-#define UPF_CHAR	6
-#define UPF_CHARPTR	7
-
-/* Flag word values */
-#define UPF_EXTEND	0x01
-#define UPF_DOT		0x02
-#define UPF_BLANK	0x04
-#define UPF_MINUS	0x08
-#define UPF_PLUS	0x10
-#define UPF_ALT		0x20
-
-static char *upf_parse(char *fmt, char *dest, char spec[MAXSPEC], int *type, int *fnums)
-// char *fmt;			/* Format string      */
-// char *dest;			/* Destination string */
-// char spec[MAXSPEC];		/* Returned spec      */
-// int *type;			/* Returned type      */
-// int *fnums;			/* Number of stars    */
-
-/* This routine examines `fmt' for printf style output directives.
- * Characters not involved in such a directive are copied to `dest'.
- * The specification is written in `spec'.  The type of the
- * spec is written in `type'.  If it is a star form, the number
- * of star specifications is written in `fnums'.
- */
-{
-    char *rtn_spec;
-    int flag_word;
-
-    dest = &(dest[strlen(dest)]);
-    /* Scan to a % sign copying into dest */
-    while (*fmt && *fmt != '%') *(dest++) = *(fmt++);
-    *dest = '\0';
-    if (!*fmt) return (char *) 0;
-
-    /* Directive scanning */
-    flag_word = 0;
-    *fnums = 0;
-    rtn_spec = spec;
-    *(rtn_spec++) = *(fmt++);
-    while (*fmt) {
-	switch (*fmt) {
-	case '%':
-	    *(dest++) = *(fmt++);
-	    *dest = '\0';
-	    return upf_parse(fmt, dest, spec, type, fnums);
-	case 'l':
-	    *(rtn_spec++) = *(fmt++);
-	    if (flag_word & UPF_EXTEND) {
-		*rtn_spec = '\0';
-		(void) strcat(dest, spec);
-		return upf_parse(fmt, dest, spec, type, fnums);
-	    } else {
-		flag_word |= UPF_EXTEND;
-	    }
-	    break;
-	case 'd':
-	case 'o':
-	case 'x':
-	case 'X':
-	    *(rtn_spec++) = *(fmt++); *rtn_spec = '\0';
-	    if (flag_word & UPF_EXTEND) *type = UPF_LONG;
-	    else *type = UPF_INT;
-	    return fmt;
-	case 'u':
-	    *(rtn_spec++) = *(fmt++); *rtn_spec = '\0';
-	    if (flag_word & UPF_EXTEND) *type = UPF_ULONG;
-	    else *type = UPF_UINT;
-	    return fmt;
-	case 'f':
-	case 'e':
-	case 'E':
-	case 'g':
-	case 'G':
-	    *(rtn_spec++) = *(fmt++); *rtn_spec = '\0';
-	    if (flag_word & UPF_EXTEND) *type = UPF_DOUBLE;
-	    else *type = UPF_FLOAT;
-	    return fmt;
-	case 'c':
-	    *(rtn_spec++) = *(fmt++); *rtn_spec = '\0';
-	    *type = UPF_CHAR;
-	    return fmt;
-	    break;
-	case 's':
-	    *(rtn_spec++) = *(fmt++); *rtn_spec = '\0';
-	    *type = UPF_CHARPTR;
-	    return fmt;
-	case '#':
-	    *(rtn_spec++) = *(fmt++);
-	    if (flag_word & UPF_ALT) {
-		*rtn_spec = '\0';
-		(void) strcat(dest, spec);
-		return upf_parse(fmt, dest, spec, type, fnums);
-	    } else {
-		flag_word |= UPF_ALT;
-	    }
-	    break;
-	case '*':
-	    *(rtn_spec++) = *(fmt++);
-	    *fnums += 1;
-	    break;
-	case '0':
-	case '1':
-	case '2':
-	case '3':
-	case '4':
-	case '5':
-	case '6':
-	case '7':
-	case '8':
-	case '9':
-	    *(rtn_spec++) = *(fmt++);
-	    break;
-	case '-':
-	    *(rtn_spec++) = *(fmt++);
-	    if (flag_word & UPF_MINUS) {
-		*rtn_spec = '\0';
-		(void) strcat(dest, spec);
-		return upf_parse(fmt, dest, spec, type, fnums);
-	    } else {
-		flag_word |= UPF_MINUS;
-	    }
-	    break;
-	case '+':
-	    *(rtn_spec++) = *(fmt++);
-	    if (flag_word & UPF_PLUS) {
-		*rtn_spec = '\0';
-		(void) strcat(dest, spec);
-		return upf_parse(fmt, dest, spec, type, fnums);
-	    } else {
-		flag_word |= UPF_PLUS;
-	    }
-	    break;
-	case ' ':
-	    *(rtn_spec++) = *(fmt++);
-	    if (flag_word & UPF_BLANK) {
-		*rtn_spec = '\0';
-		(void) strcat(dest, spec);
-		return upf_parse(fmt, dest, spec, type, fnums);
-	    } else {
-		flag_word |= UPF_BLANK;
-	    }
-	    break;
-	case '.':
-	    *(rtn_spec++) = *(fmt++);
-	    if (flag_word & UPF_DOT) {
-		*rtn_spec = '\0';
-		(void) strcat(dest, spec);
-		return upf_parse(fmt, dest, spec, type, fnums);
-	    } else {
-		flag_word |= UPF_DOT;
-	    }
-	    break;
-	default:
-	    *(rtn_spec++) = *(fmt++);
-	    *rtn_spec = '\0';
-	    (void) strcat(dest, spec);
-	    return upf_parse(fmt, dest, spec, type, fnums);
-	}
-    }
-    *rtn_spec = '\0';
-    (void) strcat(dest, spec);
-    return fmt;
-}
-
-char *uprintf(char *buf, char *upf_fmt, ...)
-// char *buf;			/* Buffer to write into   */
-// char *upf_fmt;			/* Format string          */
-// va_list *ap;			/* Argument list to parse */
 /*
- * This routine parses the printf-style specification given in `upf_fmt'
- * and performs the necessary substitutions using the remaining
- * arguments given by `ap'.  The result string is written into
- * the buffer `buf'.  All standard printf directives are supported.
- * A directive the routine does not understand is left unchanged
- * in the result string.  The argument pointer is left after
- * the last argument required by the format string.  The routine returns
- * `buf'.
+ * Simple fatal error handler — replaces the OctTools errtrap package.
+ * Library callers can check return codes; these are for truly fatal
+ * conditions (out of memory, corrupted tree structure, etc.)
  */
-{
-    char upf_spec[MAXSPEC];	/* Returned specification    */
-    char upf_field[MAXSPEC];	/* Final substituted field   */
-    int upf_type;		/* Returned directive type   */
-    int upf_fnums;		/* Number of star directives */
-
-    /* Return types */
-    int upf_f1;			/* First field width         */
-    int upf_f2;			/* Second field width        */
-    int upf_int;		/* Integer return type       */
-    long upf_long;		/* Long return type          */
-    unsigned int upf_uint;	/* Unsigned return type      */
-    unsigned long upf_ulong;	/* Unsigned long return type */
-    float upf_float;		/* Float return type         */
-    double upf_double;		/* Double return type        */
-    char upf_char;		/* Character return type     */
-    char *upf_charptr;		/* String return type        */
+static void kd_fatal(const char *fmt, ...) {
     va_list ap;
-    va_start(ap, upf_fmt);
-
-    /* Start special processing */
-    buf[0] = '\0';
-    while ((upf_fmt = upf_parse(upf_fmt, buf, upf_spec, &upf_type, &upf_fnums))) {
-	switch (upf_type) {
-	case UPF_INT:
-	    if (upf_fnums != 1) {
-		upf_int = va_arg(ap, int);
-		(void) sprintf(upf_field, upf_spec, upf_int);
-	    } else {
-		upf_f1 = va_arg(ap, int);
-		upf_int = va_arg(ap, int);
-		(void) sprintf(upf_field, upf_spec, upf_f1, upf_int);
-	    }
-	    break;
-	case UPF_LONG:
-	    if (upf_fnums != 1) {
-		upf_long = va_arg(ap, long);
-		(void) sprintf(upf_field, upf_spec, upf_long);
-	    } else {
-		upf_f1 = va_arg(ap, int);
-		upf_long = va_arg(ap, long);
-		(void) sprintf(upf_field, upf_spec, upf_f1, upf_long);
-	    }
-	    break;
-	case UPF_UINT:
-	    if (upf_fnums != 1) {
-		upf_uint = va_arg(ap, unsigned int);
-		(void) sprintf(upf_field, upf_spec, upf_uint);
-	    } else {
-		upf_f1 = va_arg(ap, int);
-		upf_uint = va_arg(ap, unsigned int);
-		(void) sprintf(upf_field, upf_spec, upf_f1, upf_uint);
-	    }
-	    break;
-	case UPF_ULONG:
-	    if (upf_fnums != 1) {
-		upf_ulong = va_arg(ap, unsigned long);
-		(void) sprintf(upf_field, upf_spec, upf_long);
-	    } else {
-		upf_f1 = va_arg(ap, int);
-		upf_ulong = va_arg(ap, unsigned long);
-		(void) sprintf(upf_field, upf_spec, upf_f1, upf_ulong);
-	    }
-	    break;
-	case UPF_FLOAT:
-	    if (upf_fnums == 1) {
-		upf_f1 = va_arg(ap, int);
-		upf_float = (float) va_arg(ap, double);
-		(void) sprintf(upf_field, upf_spec, upf_f1, upf_float);
-	    } else if (upf_fnums == 2) {
-		upf_f1 = va_arg(ap, int);
-		upf_f2 = va_arg(ap, int);
-		upf_float = (float) va_arg(ap, double);
-		(void) sprintf(upf_field, upf_spec, upf_f1, upf_f2, upf_float);
-	    } else {
-		upf_float = (float) va_arg(ap, double);
-		(void) sprintf(upf_field, upf_spec, upf_float);
-	    }
-	    break;
-	case UPF_DOUBLE:
-	    if (upf_fnums == 1) {
-		upf_f1 = va_arg(ap, int);
-		upf_double = va_arg(ap, double);
-		(void) sprintf(upf_field, upf_spec, upf_f1, upf_double);
-	    } else if (upf_fnums == 2) {
-		upf_f1 = va_arg(ap, int);
-		upf_f2 = va_arg(ap, int);
-		upf_double = va_arg(ap, double);
-		(void) sprintf(upf_field, upf_spec, upf_f1, upf_f2, upf_double);
-	    } else {
-		upf_double = va_arg(ap, double);
-		(void) sprintf(upf_field, upf_spec, upf_double);
-	    }
-	    break;
-	case UPF_CHAR:
-	    if (upf_fnums != 1) {
-		upf_char = (char) va_arg(ap, int);
-		(void) sprintf(upf_field, upf_spec, upf_char);
-	    } else {
-		upf_f1 = va_arg(ap, int);
-		upf_char = (char) va_arg(ap, int);
-		(void) sprintf(upf_field, upf_spec, upf_f1, upf_char);
-	    }
-	    break;
-	case UPF_CHARPTR:
-	    if (upf_fnums != 1) {
-		upf_charptr = va_arg(ap, char *);
-		(void) sprintf(upf_field, upf_spec, upf_charptr);
-	    } else {
-		upf_f1 = va_arg(ap, int);
-		upf_charptr = va_arg(ap, char *);
-		(void) sprintf(upf_field, upf_spec, upf_f1, upf_charptr);
-	    }
-	    break;
-	default:
-	    upf_field[0] = '\0';
-	    break;
-	}
-	(void) strcat(buf, upf_field);
-    }
-    return buf;
-}
-
-/*LINTLIBRARY*/
-
-#define ERR_BUF_SIZE	4096
-
-#define STACK_SIZE	100
-
-/* error handler stack */
-static void (*handlerList[STACK_SIZE])(char *, int, char *);
-static int numHandlers = 0;
-static int curHandlerIdx = -1;
-
-/* information given to errRaise */
-static char *errPkg = (char *) 0;
-static int errCode = 0;
-static char errMessage[ERR_BUF_SIZE];
-static char *errProgName = "\t\t*** ATTENTION ***\n\
-    The writer of this program failed to register the name of the program\n\
-    by calling `errProgramName'.  Consequently, the name of program that\n\
-    failed cannot be determined by the error handling package.\n\n<unknown>";
-static int errCoreFlag = 0;
-
-void errProgramName(char *name)
-{
-    errProgName = name;
-}
-
-void errCore(int flag)
-{
-    errCoreFlag = flag;
-}
-
-void errPushHandler(EH func)
-{
-    if (numHandlers >= STACK_SIZE) {
-	errRaise(ERR_PKG_NAME, 0,
-		"errPushHandler:  can't push error handler -- stack is full");
-    }
-    handlerList[numHandlers++] = func;
-}
-
-void errPopHandler(void)
-{
-    if (numHandlers < 1) {
-	errRaise(ERR_PKG_NAME, 0,
-		"errPopHandler:  can't pop error handler -- stack is empty");
-    }
-    numHandlers--;
-}
-
-
-void errRaise(char *pkg, int code, char *format, ...)
-{
-    va_list ap;
-
-    errPkg = pkg;
-    errCode = code;
-    va_start(ap, format);
-    if (format != errMessage) {
-	(void) uprintf(errMessage, format, &ap);
-    }
+    va_start(ap, fmt);
+    fprintf(stderr, "kd: fatal: ");
+    vfprintf(stderr, fmt, ap);
+    fprintf(stderr, "\n");
     va_end(ap);
-
-    curHandlerIdx = numHandlers;
-    while (curHandlerIdx > 0) {
-	(*handlerList[--curHandlerIdx])(errPkg, errCode, errMessage);
-    }
-    defaultHandler(errPkg, errCode, errMessage);
+    exit(1);
 }
-
-
-static void defaultHandler(pkgName, code, mesg)
-char *pkgName;
-int code;
-char *mesg;
-{
-    (void) fprintf(stderr,
-		"%s: fatal error detected by %s (code %d):\n\t%s\n",
-		errProgName, pkgName, code, mesg);
-    if (errCoreFlag) {
-	abort();
-    } else {
-	exit(1);
-    }
-}
-
-void errPass(char *format, ...)
-{
-    va_list ap;
-    static char tmpBuffer[ERR_BUF_SIZE];
-
-    va_start(ap, format);
-    (void) uprintf(tmpBuffer, format, &ap);
-    (void) strcpy(errMessage, tmpBuffer);
-    va_end(ap);
-
-    /* this should have been set by errRaise, but make sure it's possible */
-    if (curHandlerIdx > numHandlers) curHandlerIdx = numHandlers;
-
-    while (curHandlerIdx > 0) {
-	(*handlerList[--curHandlerIdx])(errPkg, errCode, errMessage);
-    }
-
-    defaultHandler(errPkg, errCode, errMessage);
-}
-
-jmp_buf errJmpBuf;
-
-static jmp_buf jmpBufList[STACK_SIZE];
-static numJmpBufs = 0;
-
-/*ARGSUSED*/
-static void ignoreHandler(char *pkgName, int code, char *message)
-{
-    if (numJmpBufs <= 0) {
-	errRaise(ERR_PKG_NAME, 0,
-	"errtrap internal error:  ERR_IGNORE handler called with no jmp_buf");
-    }
-    longjmp(jmpBufList[numJmpBufs - 1], 1);
-}
-
-void errIgnPush(void)
-{
-    void ignoreHandler();
-
-    /* don't need to check for overflow, since errPushHandler will */
-    errPushHandler(ignoreHandler);
-    (void) memcpy((char *) jmpBufList[numJmpBufs++], (char *) errJmpBuf,
-			    sizeof(jmp_buf));
-
-    /* so errStatus can tell if something trapped */
-    errPkg = (char *) 0;
-}
-
-void errIgnPop(void)
-{
-    if (numJmpBufs <= 0) {
-	errRaise(ERR_PKG_NAME, 0, "errIgnPop called before errIgnPush");
-    }
-    errPopHandler();
-    numJmpBufs--;
-}
-
-int errStatus(char **pkgNamePtr, int *codePtr, char **messagePtr)
-{
-    if (errPkg) {
-	*pkgNamePtr = errPkg;
-	*codePtr = errCode;
-	*messagePtr = errMessage;
-	return(1);
-    }
-    return(0);
-}
-
 #define MAXINT	2147483647
 #define MININT	-2147483647
 
@@ -864,11 +140,7 @@ static int kd_build_depth = 100000; /* can you imagine a tree deeper than this? 
 #define Printf		(void) printf
 
 /* Forward declarations */
-static void sel_k();
-static void resolve();
-static int get_min_max();
-static void del_elem();
-static kd_status del_element();
+/* Forward declarations moved after type definitions below */
 
 
 /*
@@ -931,26 +203,26 @@ static char *kd_fault(int t)
     switch(t)
 	{
     case KDF_M:
-	errRaise(kd_pkg_name, KDF_M, "out of memory");
+	kd_fatal("out of memory");
 	/* NOTREACHED */
 	break;
     case KDF_ZEROID:
-	errRaise(kd_pkg_name, KDF_ZEROID, "attempt to insert null data");
+	kd_fatal("attempt to insert null data");
 	/* NOTREACHED */
 	break;
     case KDF_MD:
-	errRaise(kd_pkg_name, KDF_MD, "bad median");
+	kd_fatal("bad median");
 	/* NOTREACHED */
 	break;
     case KDF_F:
-	errRaise(kd_pkg_name, KDF_F, "bad father node");
+	kd_fatal("bad father node");
 	/* NOTREACHED */
 	break;
     case KDF_DUPL:
-	errRaise(kd_pkg_name, KDF_DUPL, "attempt to insert duplicate item");
+	kd_fatal("attempt to insert duplicate item");
 	/* NOTREACHED */
     default:
-	errRaise(kd_pkg_name, KDF_UNKNOWN, "unknown fault: %d", t);
+	kd_fatal("unknown fault: %d", t);
 	/* NOTREACHED */
 	break;
     }
@@ -1067,8 +339,16 @@ static kd_list *kd_tmp_ptr;
 
 
 /* Forward declarations */
-static kd_list *load_items();
-static KDElem *build_node();
+static kd_list *load_items(int (*itemfunc)(kd_generic arg, kd_generic *val, kd_box size), kd_generic arg, kd_box extent, int *length, double *mean);
+static KDElem *build_node(kd_list *items, int num, kd_box extent, int disc, int level, int max_level, kd_list **spares, int *treecount, double mean);
+static void sel_k(kd_list *items, int k, int disc, kd_list **lo, kd_list **eq, kd_list **hi, double *lomean, double *himean, long *locount, long *hicount);
+static void resolve(kd_list **lo, kd_list **eq, kd_list **hi, int disc, double *lomean, double *himean, long *locount, long *hicount);
+static int get_min_max(kd_list *list, int disc, int *b_min, int *b_max);
+static void del_elem(KDElem *elem, void (*delfunc)(kd_generic item));
+static kd_status del_element(KDTree *tree, KDElem *elem, int spot);
+static KDElem *find_item(KDElem *elem, int disc, kd_generic item, kd_box size, int search_p, KDElem *items_elem);
+static void bounds_update(KDElem *elem, int disc, kd_box size);
+static int find_min_max_node(int j, KDElem **kd_minval_node, KDElem **kd_minval_nodesdad, int *dir, int *newj);
   
 int kd_set_build_depth(int depth)
 {
@@ -1102,8 +382,6 @@ kd_tree kd_build(int (*itemfunc)(kd_generic arg, kd_generic *val, kd_box size), 
     kd_box extent;
 	int item_count = 0,count;
 	double mean;
-	errProgramName(" ");
-	
     /* First build up list of items and their overall extent */
     items = load_items(itemfunc, arg, extent, &item_count, &mean);
     if (!items)
@@ -1581,7 +859,7 @@ void kd_destroy(kd_tree this_one, void (*delfunc)(kd_generic item))
  */
 
 /* Forward declaration */
-static KDElem *find_item();
+
 
 void kd_insert(kd_tree theTree, kd_generic data, kd_box size, kd_generic datas_elem)
 // kd_tree theTree;		/* k-d tree for insertion */
@@ -1717,8 +995,7 @@ void kd_print_path(void) /* this routine is for debug */
 
 
 
-/* Forward declaration */
-static void bounds_update();
+/* bounds_update declared in forward declarations block above */
 
 static KDElem *find_item(KDElem *elem, int disc, kd_generic item, kd_box size, int search_p, KDElem *items_elem)
 // KDElem *elem;			/* Search location */
@@ -2816,7 +2093,7 @@ static double coord_dist(long x, long y)
 	return d;
 }
 
-static add_priority(int m, KDPriority *P, kd_box Xq, KDElem *elem)
+static void add_priority(int m, KDPriority *P, kd_box Xq, KDElem *elem)
 {
 	int x;
 	double d;

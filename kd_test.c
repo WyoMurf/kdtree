@@ -25,8 +25,6 @@
 #define srandom(x) srand(x)
 #endif
 
-/* for errtrap */
-char *optProgName = "";
 
 #define KD_BOXES	1000000
 #define KD_REGIONS      1000
@@ -37,9 +35,9 @@ char *optProgName = "";
 #define BOX_RANGE	1000
 
 static kd_box boxes[KD_BOXES];
-static void gen_boxes();
-static int gen_box();
-static void rand_box();
+static void gen_boxes(void);
+static int gen_box(kd_generic arg, kd_generic *val, kd_box size);
+static void rand_box(kd_box box);
 
 #define BOXINTERSECT(b1, b2) \
   (((b1)[KD_RIGHT] >= (b2)[KD_LEFT]) && \
@@ -132,7 +130,6 @@ int main(int argc, char **argv)
     printf(" sizeof(long double) = %zd, sizeof(long double*)=%zd\n", sizeof(s13), sizeof(s16));
 
   
-    optProgName = argv[0];
     gen_boxes();
     idx = 0;
     tree = kd_build(gen_box, (kd_generic) &idx);
@@ -157,11 +154,11 @@ int main(int argc, char **argv)
 			break;
 		    }
 		}
-		if (k >= n) errRaise("kd_test", 0, "missing item");
+		if (k >= n) { fprintf(stderr, "FAIL: missing item\n"); exit(1); };
 	    }
 	}
 	for (k = 0;  k < n;  k++) {
-	    if (local[k] >= 0) errRaise("kd_test", 0, "extra item");
+	    if (local[k] >= 0) { fprintf(stderr, "FAIL: extra item\n"); exit(1); };
 	}
     }
     printf("Phase one complete. %d Regions searched.\n", KD_REGIONS);
@@ -181,7 +178,7 @@ int main(int argc, char **argv)
     region[KD_TOP] = MAX_RANGE+1;
     gen = kd_start(tree, region);
     while (kd_next(gen, (kd_generic *) &item, size) == KD_OK) {
-	errRaise("kd_test", 0, "incomplete delete");
+	{ fprintf(stderr, "FAIL: incomplete delete\n"); exit(1); };
     }
     printf("...And none were found in the tree afterwards!\n");
     kd_destroy(tree, NULL);
@@ -210,11 +207,11 @@ int main(int argc, char **argv)
 			break;
 		    }
 		}
-		if (k >= n) errRaise("kd_test", 0, "missing item");
+		if (k >= n) { fprintf(stderr, "FAIL: missing item\n"); exit(1); };
 	    }
 	}
 	for (k = 0;  k < n;  k++) {
-	    if (local[k] >= 0) errRaise("kd_test", 0, "extra item");
+	    if (local[k] >= 0) { fprintf(stderr, "FAIL: extra item\n"); exit(1); };
 	}
     }
     printf("Phase one complete. %d Regions searched.\n", KD_REGIONS);
@@ -244,7 +241,7 @@ int main(int argc, char **argv)
     region[KD_TOP] = MAX_RANGE+1;
     gen = kd_start(tree, region);
     while (kd_next(gen, (kd_generic *) &item, size) == KD_OK) {
-	errRaise("kd_test", 0, "incomplete delete");
+	{ fprintf(stderr, "FAIL: incomplete delete\n"); exit(1); };
     }
     printf("...And none were found in the tree afterwards!\n");
     kd_destroy(tree, NULL);

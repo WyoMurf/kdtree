@@ -15,7 +15,7 @@
 #define srandom(x) srand(x)
 #endif
 
-char *optProgName = "";
+
 
 #define KD_BOXES	1000000
 #define KD_REGIONS      1000
@@ -82,7 +82,7 @@ int main(int argc, char **argv)
     static int local[KD_BOXES];
     int idx, i, j, k, n, item;
 
-    optProgName = argv[0];
+    (void)argc; (void)argv;
     gen_boxes();
     idx = 0;
     tree = kd_build(gen_box, (kd_generic) &idx);
