@@ -66,13 +66,24 @@ Here are the list of my changes to his code:
 Not all of it is working yet. But, eventually, I'll grab a moment here and there
 to finish it off.
 
+Building
+--------
+
+    make          # build test executables
+    make test     # run soft-delete and hard-delete tests in parallel
+    make clean    # remove build artifacts
+
+Requires gcc. On Ubuntu/Debian: `apt install build-essential`.
+On Windows/MSYS2: `pacman -S mingw-w64-x86_64-gcc`.
+
 TO DO:
 
-1. The really_delete routine seems to have problems with the last delete.
+1. ~~The really_delete routine seems to have problems with the last delete.~~
+   FIXED -- kd_really_delete now handles root-node deletion correctly.
 
 2. The code was part of the OctTools system, and uses other packages,
    like the error stuff (uprintf), and this stuff needs to be cleaned out
-   to reduce the complexity and allow other users to determine what to 
+   to reduce the complexity and allow other users to determine what to
    do on errors.
 
 3. kd_test needs to be upgraded to test every function. Especially the
@@ -81,10 +92,11 @@ TO DO:
 4. Valgrind comes up with all sorts of illegal reads and some illegal
    writes. All are quite mysterious. Need to clean all this up.
 
-5. It would probably be nice to use configure to build from
-   source. Wouldn't it?
+5. ~~It would probably be nice to use configure to build from
+   source. Wouldn't it?~~
+   A Makefile and GitHub Actions CI workflow are now provided.
 
-6. Hey, don't you think that other packages, like GLIB, KDE, GNOME, window 
+6. Hey, don't you think that other packages, like GLIB, KDE, GNOME, window
    managers and systems, anything working in 2d-space, would have a good
    geographic search mechanism built in? Oh, yes, I forgot! There will
    never be more than 32 or 64 objects in use, ever, so why bother?

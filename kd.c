@@ -1945,14 +1945,25 @@ kd_status kd_really_delete(kd_tree theTree, kd_generic data, kd_box old_size, in
     elem = find_item(real_tree->tree, 0, data, old_size, 1,0);
     if (elem)
 	{
-		elemdad = path_to_item[path_length-1];
-		/* Delete element */
-		j = KD_DISC(path_length);
-		newelem = kd_do_delete(real_tree,elem,j);
-		if( elemdad->sons[KD_HISON] == elem )
-			elemdad->sons[KD_HISON] = newelem;
+		if (elem == real_tree->tree)
+		{
+			/* Deleting the root node -- path_to_item has no ancestors recorded,
+			   and path_length is stale. Root always has discriminator 0. */
+			j = 0;
+			newelem = kd_do_delete(real_tree, elem, j);
+			real_tree->tree = newelem;
+		}
 		else
-			elemdad->sons[KD_LOSON] = newelem;
+		{
+			elemdad = path_to_item[path_length-1];
+			/* Delete element */
+			j = KD_DISC(path_length);
+			newelem = kd_do_delete(real_tree,elem,j);
+			if( elemdad->sons[KD_HISON] == elem )
+				elemdad->sons[KD_HISON] = newelem;
+			else
+				elemdad->sons[KD_LOSON] = newelem;
+		}
 		FREE(elem);
 		real_tree->item_count--;
 	}
