@@ -81,16 +81,24 @@ TO DO:
 1. ~~The really_delete routine seems to have problems with the last delete.~~
    FIXED -- kd_really_delete now handles root-node deletion correctly.
 
-2. The code was part of the OctTools system, and uses other packages,
+2. ~~The code was part of the OctTools system, and uses other packages,
    like the error stuff (uprintf), and this stuff needs to be cleaned out
    to reduce the complexity and allow other users to determine what to
-   do on errors.
+   do on errors.~~
+   FIXED -- Removed ~750 lines of embedded OctTools code (port.h, uprintf,
+   errtrap). Replaced with standard C11 headers and a simple kd_fatal()
+   function. Code now compiles clean with -std=c11.
 
-3. kd_test needs to be upgraded to test every function. Especially the
-   "Nearest Neighbor" stuff.
+3. ~~kd_test needs to be upgraded to test every function. Especially the
+   "Nearest Neighbor" stuff.~~
+   PARTIAL -- Added kd_test_nearest.c which verifies nearest neighbor
+   results against brute-force linear scan with multiple neighbor counts.
 
 4. Valgrind comes up with all sorts of illegal reads and some illegal
    writes. All are quite mysterious. Need to clean all this up.
+   NOTE: Many valgrind issues were likely caused by the stale path_length
+   bug (fixed in TODO #1) and K&R declaration mismatches (fixed in TODO #2).
+   Re-run valgrind to see what remains.
 
 5. ~~It would probably be nice to use configure to build from
    source. Wouldn't it?~~
