@@ -17,7 +17,13 @@
  */
 
 #include "kd.h"
-#include <sys/time.h>
+#include <stdlib.h>
+#include <time.h>
+
+#ifdef _WIN32
+#define random() rand()
+#define srandom(x) srand(x)
+#endif
 
 /* for errtrap */
 char *optProgName = "";
@@ -45,15 +51,10 @@ static void rand_box(kd_box box)
 /* Generates a random box in `box' */
 {
     static int init = 0;
-    long random();
 
     if (!init) {
-	struct timeval tp;
-	struct timezone whocares;
-
 	/* Randomize generator */
-	(void) gettimeofday(&tp, &whocares);
-	(void) srandom((int) (tp.tv_sec + tp.tv_usec));
+	(void) srandom((int) time(NULL));
 	init = 1;
     }
 
@@ -96,12 +97,12 @@ static void gen_boxes(void)
     }
 }
 
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
     kd_tree tree;
     kd_box region, size;
     kd_gen gen;
-    int local[KD_BOXES];
+    static int local[KD_BOXES];
     int idx, i, j, k, n, item;
 
     int s1;
