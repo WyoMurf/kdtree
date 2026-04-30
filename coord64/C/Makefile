@@ -1,15 +1,14 @@
 CC = gcc
 CFLAGS = -std=c11 -O2 -Wall -Wno-unused-function -Wno-unused-variable \
          -Wno-unused-but-set-variable -Wno-pointer-to-int-cast \
-         -Wno-int-to-pointer-cast
+         -Wno-int-to-pointer-cast -Wno-format -Wno-maybe-uninitialized -Wno-incompatible-pointer-types
 LDFLAGS = -lm
 
-# Static linking on Windows to avoid DLL issues
 ifeq ($(OS),Windows_NT)
   LDFLAGS += -static
 endif
 
-TESTS = kd_test_soft kd_test_hard kd_test_nearest
+TESTS = kd_test_soft kd_test_hard kd_test_nearest benchmark
 
 .PHONY: all test clean
 
@@ -24,7 +23,9 @@ kd_test_hard: kd.c kd_test_hard.c kd.h
 kd_test_nearest: kd.c kd_test_nearest.c kd.h
 	$(CC) $(CFLAGS) -o $@ kd.c kd_test_nearest.c $(LDFLAGS)
 
-# Run all tests in parallel with exit code checking
+benchmark: kd.c benchmark.c kd.h
+	$(CC) $(CFLAGS) -O3 -o $@ kd.c benchmark.c $(LDFLAGS)
+
 test: $(TESTS)
 	@echo "=== Running tests in parallel ==="
 	@./kd_test_soft$(EXEEXT) & PID1=$$!; \
@@ -38,6 +39,6 @@ test: $(TESTS)
 	@echo "=== All tests passed ==="
 
 clean:
-	rm -f kd_test_soft kd_test_hard kd_test_nearest \
-	      kd_test_soft.exe kd_test_hard.exe kd_test_nearest.exe \
+	rm -f kd_test_soft kd_test_hard kd_test_nearest benchmark \
+	      kd_test_soft.exe kd_test_hard.exe kd_test_nearest.exe benchmark.exe \
 	      kd_test.exe *.o out.txt
