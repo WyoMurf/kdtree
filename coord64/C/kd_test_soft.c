@@ -1,8 +1,8 @@
 /*
- * K-d tree test: hard delete (kd_really_delete)
+ * K-d tree test: soft delete (kd_delete)
  *
- * Builds a tree of rand boxes, verifies search correctness,
- * then deletes every item using kd_really_delete (structural removal).
+ * Builds a tree of random boxes, verifies search correctness,
+ * then deletes every item using kd_delete (mark-as-deleted).
  * Returns 0 on success, non-zero on failure.
  */
 
@@ -22,7 +22,7 @@
 
 #define MIN_RANGE	-100000
 #define MAX_RANGE	100000
-#define RANGE_SPAN (MAX_RANGE - MIN_RANGE + 1)
+#define RANGE_SPAN	(MAX_RANGE - MIN_RANGE + 1)
 #define BOX_RANGE	1000
 
 static kd_box boxes[KD_BOXES];
@@ -81,8 +81,6 @@ int main(int argc, char **argv)
     kd_gen gen;
     static int local[KD_BOXES];
     int idx, i, j, k, n, item;
-    int num_tries, num_del;
-    int tot_tries, tot_dels;
 
     (void)argc; (void)argv;
     gen_boxes();
@@ -100,7 +98,7 @@ int main(int argc, char **argv)
 	    n++;
 	}
 	kd_finish(gen);
-	if (i%100 == 0) printf("[hard] Region %d: %d boxes found\n", i, n);
+	if (i%100 == 0) printf("[soft] Region %d: %d boxes found\n", i, n);
 	for (j = 0;  j < KD_BOXES;  j++) {
 	    if (BOXINTERSECT(region, boxes[j])) {
 		for (k = 0;  k < n;  k++) {
@@ -110,33 +108,28 @@ int main(int argc, char **argv)
 		    }
 		}
 		if (k >= n) {
-		    fprintf(stderr, "[hard] FAIL: missing item in search\n");
+		    fprintf(stderr, "[soft] FAIL: missing item in search\n");
 		    return 1;
 		}
 	    }
 	}
 	for (k = 0;  k < n;  k++) {
 	    if (local[k] >= 0) {
-		fprintf(stderr, "[hard] FAIL: extra item in search\n");
+		fprintf(stderr, "[soft] FAIL: extra item in search\n");
 		return 1;
 	    }
 	}
     }
-    printf("[hard] Search verification complete. %d regions searched.\n", KD_REGIONS);
+    printf("[soft] Search verification complete. %d regions searched.\n", KD_REGIONS);
 
-    /* Phase two: hard delete every item */
-    tot_tries = 0;
-    tot_dels = 0;
+    /* Phase two: soft delete every item */
     for (i = KD_BOXES-1;  i >= 0;  i--) {
-	if (i%100000==0) printf("[hard] deleting item %d...\n", i);
-	if (kd_really_delete(tree, (kd_generic) (long)(i+1), boxes[i], &num_tries, &num_del) != KD_OK) {
-	    fprintf(stderr, "[hard] FAIL: could not really_delete item %d\n", i);
+	if (kd_delete(tree, (kd_generic) (long)(i+1), boxes[i]) != KD_OK) {
+	    fprintf(stderr, "[soft] FAIL: could not delete item %d\n", i);
 	    return 1;
 	}
-	tot_tries += num_tries;
-	tot_dels += num_del;
     }
-    printf("[hard] Deleted %d items; tries=%d, dels=%d\n", KD_BOXES, tot_tries, tot_dels);
+    printf("[soft] Deleted %d items from the tree.\n", KD_BOXES);
 
     /* Verify tree is empty */
     region[KD_LEFT] = MIN_RANGE-1;
@@ -145,10 +138,10 @@ int main(int argc, char **argv)
     region[KD_TOP] = MAX_RANGE+1;
     gen = kd_start(tree, region);
     while (kd_next(gen, (kd_generic *) &item, size) == KD_OK) {
-	fprintf(stderr, "[hard] FAIL: tree not empty after delete\n");
+	fprintf(stderr, "[soft] FAIL: tree not empty after delete\n");
 	return 1;
     }
-    printf("[hard] Verified tree is empty. PASS\n");
+    printf("[soft] Verified tree is empty. PASS\n");
     kd_destroy(tree, NULL);
 
     return 0;
