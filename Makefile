@@ -1,43 +1,41 @@
 CC = gcc
-CFLAGS = -std=c11 -O2 -Wall -Wno-unused-function -Wno-unused-variable \
-         -Wno-unused-but-set-variable -Wno-pointer-to-int-cast \
-         -Wno-int-to-pointer-cast
+CFLAGS = -std=c11 -O3 -Wall -Wno-unused -fPIC
 LDFLAGS = -lm
-
-# Static linking on Windows to avoid DLL issues
-ifeq ($(OS),Windows_NT)
-  LDFLAGS += -static
-endif
 
 TESTS = kd_test_soft kd_test_hard kd_test_nearest
 
-.PHONY: all test clean
+.PHONY: all test clean install lib
 
-all: $(TESTS)
+all: lib $(TESTS)
 
-kd_test_soft: kd.c kd_test_soft.c kd.h
-	$(CC) $(CFLAGS) -o $@ kd.c kd_test_soft.c $(LDFLAGS)
+lib: libkdtree.so libkdtree.a
 
-kd_test_hard: kd.c kd_test_hard.c kd.h
-	$(CC) $(CFLAGS) -o $@ kd.c kd_test_hard.c $(LDFLAGS)
+kd.o: kd.c kd.h
+	$(CC) $(CFLAGS) -c kd.c
 
-kd_test_nearest: kd.c kd_test_nearest.c kd.h
-	$(CC) $(CFLAGS) -o $@ kd.c kd_test_nearest.c $(LDFLAGS)
+libkdtree.so: kd.o
+	$(CC) -shared -o $@ kd.o $(LDFLAGS)
 
-# Run all tests in parallel with exit code checking
+libkdtree.a: kd.o
+	ar rcs $@ kd.o
+
+kd_test_soft: kd.o kd_test_soft.c kd.h
+	$(CC) $(CFLAGS) -o $@ kd.o kd_test_soft.c $(LDFLAGS)
+
+kd_test_hard: kd.o kd_test_hard.c kd.h
+	$(CC) $(CFLAGS) -o $@ kd.o kd_test_hard.c $(LDFLAGS)
+
+kd_test_nearest: kd.o kd_test_nearest.c kd.h
+	$(CC) $(CFLAGS) -o $@ kd.o kd_test_nearest.c $(LDFLAGS)
+
 test: $(TESTS)
-	@echo "=== Running tests in parallel ==="
-	@./kd_test_soft$(EXEEXT) & PID1=$$!; \
-	 ./kd_test_hard$(EXEEXT) & PID2=$$!; \
-	 ./kd_test_nearest$(EXEEXT) & PID3=$$!; \
-	 FAIL=0; \
-	 wait $$PID1 || FAIL=1; \
-	 wait $$PID2 || FAIL=1; \
-	 wait $$PID3 || FAIL=1; \
-	 if [ $$FAIL -ne 0 ]; then echo "=== TESTS FAILED ==="; exit 1; fi
-	@echo "=== All tests passed ==="
+	@echo "=== Running tests ==="
+	./kd_test_soft && ./kd_test_hard && ./kd_test_nearest
 
 clean:
-	rm -f kd_test_soft kd_test_hard kd_test_nearest \
-	      kd_test_soft.exe kd_test_hard.exe kd_test_nearest.exe \
-	      kd_test.exe *.o out.txt
+	rm -f $(TESTS) libkdtree.so libkdtree.a *.o
+
+install: lib
+	install -D -m 755 libkdtree.so $(DESTDIR)/usr/lib64/libkdtree.so
+	install -D -m 644 libkdtree.a $(DESTDIR)/usr/lib64/libkdtree.a
+	install -D -m 644 kd.h $(DESTDIR)/usr/include/kdtree/kd.h
