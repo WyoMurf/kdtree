@@ -30,15 +30,40 @@ I decided to make it available to the world, as I really haven't found
 any good public geographic databases available.
 
 Back in 1990, I also wrote a 3D kdtree implementation, but that code
-got lost. Sorry. Really, it's not that hard to take this
-code and turn it into a 3D database. I spotted a 3D implementation
-at http://g3d.sourceforge.net/ (G3D Innovation Engine) -- I haven't 
-evaluated it yet, but based on all the surrounding goodies, it looks 
-very promising!
+got lost. I have recoded a 3D implementation and it is now in the 3d
+directory. I have also created a 64-bit coordinate version of the code
+for both 2d and 3d versions, and also have Go, Julia, and Rust translations
+in for each coordinate size. All have the accompanying make files, and
+tests. I intend to make the coordinate size configurable to 32 bit, 64 bit,
+and 128 bit. Whether this is done by editing it the .h file, or setting some
+environment variable during the build, is yet to be seen... or just build them
+all, and include them in the same archive, and rename the functions to account
+for the size (like kd_2d_32_create()). I'm just mulling over the choices now.
 
-Also, this code assumes that bounding boxes are 32-bit integers.
-It would not be difficult to turn that into longs or long longs and
-get 64-bit resolution.
+I've also been mulling over the coordinate spaces, and their resolution in 
+terms of meters for real situations. The 32-bit coordinates have a range of
+about 4 billion units. If expressing all coordinates in latitude-longitude notation,
+each integer point on earth's surface would be separated by 1.11 cm at the
+earth's equator. This should be sufficiently precise for most earth-based
+geo databases.
+
+However, for galactic 3d databases, this would be insufficient, but 64-bit coordinate
+values should suffice, with the distance between pixels being 51.4 metersA (assuming
+100,000 light-years in diameter).
+
+And for observable universe, 128-bit coordinates should suffice, as the size of
+observable universe is approx. 93 billion light-years (or 8.8e26 meters). For
+64-bit integers, this would provide a resolution of approx. 47,800 kilometers between
+coordinates, a planet could easily hide between coordinates. But with 128-bit coordinates,
+we improve resolution to 2.6 picometers per unit. (That's about 1/40th the size of a hydrogen
+atom. So, there would be some room for expansion. But, at the moment, not all languages
+support this integer size. C, Rust, and Julia all have 128-bit integer primitives, but
+Go requires the use of the math/big package.
+
+I spotted a 3D implementation at http://g3d.sourceforge.net/ (G3D 
+Innovation Engine) -- I haven't evaluated it yet, but based on all the 
+surrounding goodies, it looks very promising!
+
 
 
 Here are the list of my changes to his code:
@@ -62,9 +87,12 @@ Here are the list of my changes to his code:
  *   current state of compilers.
  * + upgraded kd_test.c to use 1 million random boxes; seems more appropriate 
  *   for todays faster computers and bigger datasets.
+ * + I added 32 bit coordinate values and 64 bit; 128 may be forthcoming.
+ * + I added recoded libs for Go, Julia, and Rust, to make this code more accessible to
+ *   users using those languages.
 
-Not all of it is working yet. But, eventually, I'll grab a moment here and there
-to finish it off.
+All the code appears to be working. I have a few TODO's, like somehow merging copies
+of code to a single source file for 32, 64, and 128 bit values.
 
 Building
 --------
@@ -73,7 +101,7 @@ Building
     make test     # run soft-delete and hard-delete tests in parallel
     make clean    # remove build artifacts
 
-Requires gcc. On Ubuntu/Debian: `apt install build-essential`.
+For C, requires gcc. On Ubuntu/Debian: `apt install build-essential`.
 On Windows/MSYS2: `pacman -S mingw-w64-x86_64-gcc`.
 
 TO DO:
@@ -111,7 +139,8 @@ TO DO:
    managers and systems, anything working in 2d-space, would have a good
    geographic search mechanism built in? Oh, yes, I forgot! There will
    never be more than 32 or 64 objects in use, ever, so why bother?
-   Just use linear search!
+   Just use linear search! Oh, and by now, they all probably have some
+   really cool geographical capabilities.
 
 Licensing:
 
