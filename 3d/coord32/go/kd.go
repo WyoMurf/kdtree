@@ -5,16 +5,16 @@ import (
 	"math"
 )
 
-
-// Box defines a 2D bounding box [left, bottom, right, top]
-// Box defines a 2D bounding box [left, bottom, right, top]
-type Box [4]int64
+// Box defines a 3D bounding box [left, bottom, floor, right, top, ceil]
+type Box [6]int32
 
 const (
 	Left   = 0
 	Bottom = 1
-	Right  = 2
-	Top    = 3
+	Floor  = 2
+	Right  = 3
+	Top    = 4
+	Ceil   = 5
 )
 
 // Status represents return values for operations
@@ -31,9 +31,9 @@ const (
 type Node struct {
 	Item         interface{}
 	Size         Box
-	LoMinBound   int64
-	HiMaxBound   int64
-	OtherBound   int64
+	LoMinBound   int32
+	HiMaxBound   int32
+	OtherBound   int32
 	Sons         [2]*Node
 }
 
@@ -53,10 +53,12 @@ func Create() *Tree {
 
 // Disc returns the discriminator for a given level
 func Disc(level int) int {
-	return level % 4
+	return level % 6
 }
 
-// ... more implementation to follow
+func nextDisc(disc int) int {
+	return (disc + 1) % 6
+}
 
 func (t *Tree) Insert(data interface{}, size Box) {
 	if data == nil {
@@ -68,7 +70,7 @@ func (t *Tree) Insert(data interface{}, size Box) {
 			Item:       data,
 			Size:       size,
 			LoMinBound: size[0],
-			HiMaxBound: size[2],
+			HiMaxBound: size[3],
 			OtherBound: size[0],
 		}
 		t.Extent = size
@@ -79,15 +81,15 @@ func (t *Tree) Insert(data interface{}, size Box) {
 	if t.findItem(t.Root, 0, data, size, false) != nil {
 		t.ItemCount++
 		// Update tree extent
-		if size[Left] < t.Extent[Left] { t.Extent[Left] = size[Left] }
-		if size[Right] > t.Extent[Right] { t.Extent[Right] = size[Right] }
-		if size[Top] > t.Extent[Top] { t.Extent[Top] = size[Top] }
-		if size[Bottom] < t.Extent[Bottom] { t.Extent[Bottom] = size[Bottom] }
+		for i := 0; i < 3; i++ {
+			if size[i] < t.Extent[i] {
+				t.Extent[i] = size[i]
+			}
+			if size[i+3] > t.Extent[i+3] {
+				t.Extent[i+3] = size[i+3]
+			}
+		}
 	}
-}
-
-func nextDisc(disc int) int {
-	return (disc + 1) % 4
 }
 
 func (t *Tree) findItem(elem *Node, disc int, item interface{}, size Box, searchP bool) *Node {
@@ -98,7 +100,7 @@ func (t *Tree) findItem(elem *Node, disc int, item interface{}, size Box, search
 		return nil // Duplicate not allowed for insert
 	}
 
-	var val int64 = size[disc] - elem.Size[disc]
+	var val int32 = size[disc] - elem.Size[disc]
 	if val == 0 {
 		ndisc := nextDisc(disc)
 		for ndisc != disc {
@@ -131,19 +133,19 @@ func (t *Tree) findItem(elem *Node, disc int, item interface{}, size Box, search
 	}
 
 	// Insert here
-	vert := int(nextDisc(disc) & 0x01)
+	vert := int(nextDisc(disc) % 3)
 	newNode := &Node{
 		Item:       item,
 		Size:       size,
 		LoMinBound: size[vert],
-		HiMaxBound: size[vert+2],
+		HiMaxBound: size[vert+3],
 	}
-	// Logic for other_bound from C code: 
-	// items_elem->other_bound = ((NEXTDISC(disc)&0x2) ? size[vert] : size[vert+2]);
-	if (nextDisc(disc) & 0x2) != 0 {
+	
+	// items_elem->other_bound = ((NEXTDISC(disc)>=3) ? size[vert] : size[vert+3]);
+	if nextDisc(disc) >= 3 {
 		newNode.OtherBound = size[vert]
 	} else {
-		newNode.OtherBound = size[vert+2]
+		newNode.OtherBound = size[vert+3]
 	}
 
 	elem.Sons[childIdx] = newNode
@@ -152,13 +154,21 @@ func (t *Tree) findItem(elem *Node, disc int, item interface{}, size Box, search
 }
 
 func (t *Tree) boundsUpdate(elem *Node, disc int, size Box) {
-	vert := int(disc & 0x01)
-	if size[vert] < elem.LoMinBound { elem.LoMinBound = size[vert] }
-	if size[vert+2] > elem.HiMaxBound { elem.HiMaxBound = size[vert+2] }
-	if (disc & 0x02) != 0 {
-		if size[vert] < elem.OtherBound { elem.OtherBound = size[vert] }
+	vert := int(disc % 3)
+	if size[vert] < elem.LoMinBound {
+		elem.LoMinBound = size[vert]
+	}
+	if size[vert+3] > elem.HiMaxBound {
+		elem.HiMaxBound = size[vert+3]
+	}
+	if disc >= 3 {
+		if size[vert] < elem.OtherBound {
+			elem.OtherBound = size[vert]
+		}
 	} else {
-		if size[vert+2] > elem.OtherBound { elem.OtherBound = size[vert+2] }
+		if size[vert+3] > elem.OtherBound {
+			elem.OtherBound = size[vert+3]
+		}
 	}
 }
 
@@ -198,7 +208,7 @@ func (g *Generator) Next() (interface{}, Box, bool) {
 		top := &g.stack[topIdx]
 		node := top.node
 		m := top.disc
-		hort := m & 0x01
+		hort := m % 3
 
 		switch top.state {
 		case ThisOne:
@@ -210,12 +220,12 @@ func (g *Generator) Next() (interface{}, Box, bool) {
 			g.stack[topIdx].state = HiSon
 			if node.Sons[0] != nil {
 				shouldPush := false
-				if (m & 0x02) != 0 { // RIGHT or TOP
-					if g.extent[hort] <= node.Size[m] && g.extent[hort+2] >= node.LoMinBound {
+				if m >= 3 { // RIGHT, TOP or CEIL
+					if g.extent[hort] <= node.Size[m] && g.extent[hort+3] >= node.LoMinBound {
 						shouldPush = true
 					}
-				} else { // LEFT or BOTTOM
-					if g.extent[hort] <= node.OtherBound && g.extent[hort+2] >= node.LoMinBound {
+				} else { // LEFT, BOTTOM or FLOOR
+					if g.extent[hort] <= node.OtherBound && g.extent[hort+3] >= node.LoMinBound {
 						shouldPush = true
 					}
 				}
@@ -228,12 +238,12 @@ func (g *Generator) Next() (interface{}, Box, bool) {
 			g.stack[topIdx].state = Done
 			if node.Sons[1] != nil {
 				shouldPush := false
-				if (m & 0x02) != 0 { // RIGHT or TOP
-					if g.extent[hort] <= node.HiMaxBound && g.extent[hort+2] >= node.OtherBound {
+				if m >= 3 { // RIGHT, TOP or CEIL
+					if g.extent[hort] <= node.HiMaxBound && g.extent[hort+3] >= node.OtherBound {
 						shouldPush = true
 					}
-				} else { // LEFT or BOTTOM
-					if g.extent[hort] <= node.HiMaxBound && g.extent[hort+2] >= node.Size[m] {
+				} else { // LEFT, BOTTOM or FLOOR
+					if g.extent[hort] <= node.HiMaxBound && g.extent[hort+3] >= node.Size[m] {
 						shouldPush = true
 					}
 				}
@@ -253,7 +263,9 @@ func Intersect(b1, b2 Box) bool {
 	return b1[Right] >= b2[Left] &&
 		b2[Right] >= b1[Left] &&
 		b1[Top] >= b2[Bottom] &&
-		b2[Top] >= b1[Bottom]
+		b2[Top] >= b1[Bottom] &&
+		b1[Ceil] >= b2[Floor] &&
+		b2[Ceil] >= b1[Floor]
 }
 
 // IsMember checks if an item exists in the tree
@@ -378,6 +390,224 @@ func (t *Tree) findExtreme(node *Node, nodeDisc int, targetDisc int, findMin boo
 	}
 
 	return bestItem, bestSize
+}
+
+// Priority represents an element for nearest neighbor search
+type Priority struct {
+	Dist float64
+	Item interface{}
+}
+
+// Nearest finds the m closest items to the point (x, y, z)
+func (t *Tree) Nearest(x, y, z int32, m int) []Priority {
+	if t.Root == nil || m <= 0 {
+		return nil
+	}
+
+	list := make([]Priority, m)
+	for i := range list {
+		list[i].Dist = math.MaxFloat64
+	}
+
+	Xq := Box{x, y, z, x, y, z}
+	Bp := Box{math.MaxInt32, math.MaxInt32, math.MaxInt32, math.MaxInt32, math.MaxInt32, math.MaxInt32}
+	Bn := Box{math.MinInt32, math.MinInt32, math.MinInt32, math.MinInt32, math.MinInt32, math.MinInt32}
+
+	t.kdNeighbor(t.Root, Xq, m, list, Bp, Bn)
+
+	// Convert squared distances to actual distances
+	for i := range list {
+		if list[i].Dist != math.MaxFloat64 {
+			list[i].Dist = math.Sqrt(list[i].Dist)
+		}
+	}
+	return list
+}
+
+func (t *Tree) kdNeighbor(node *Node, Xq Box, m int, list []Priority, Bp, Bn Box) {
+	type nSave struct {
+		node  *Node
+		disc  int
+		state State
+		Bn    Box
+		Bp    Box
+	}
+
+	stack := make([]nSave, 0, 16)
+	stack = append(stack, nSave{node: node, disc: 0, state: ThisOne, Bn: Bn, Bp: Bp})
+
+	for len(stack) > 0 {
+		topIdx := len(stack) - 1
+		top := &stack[topIdx]
+		currNode := top.node
+		d := top.disc
+		p := currNode.Size[d]
+
+		hort := d % 3
+		vert := d >= 3
+
+		switch top.state {
+		case ThisOne:
+			top.state = LoSon
+			if currNode.Item != nil {
+				t.addPriority(m, list, Xq, currNode)
+			}
+		case LoSon:
+			top.state = HiSon
+			// Try the side containing the query point first, or follow the tree structure
+			// The C code has a specific order based on Xq[d] <= p
+			if Xq[d] <= p {
+				if currNode.Sons[0] != nil {
+					oldBn := top.Bn[hort]
+					oldBp := top.Bp[hort]
+					if vert {
+						top.Bp[hort] = currNode.Size[d]
+						top.Bn[hort] = currNode.LoMinBound
+					} else {
+						top.Bp[hort] = currNode.OtherBound
+						top.Bn[hort] = currNode.LoMinBound
+					}
+
+					if t.boundsOverlapBall(Xq, top.Bp, top.Bn, m, list) {
+						stack = append(stack, nSave{node: currNode.Sons[0], disc: nextDisc(d), state: ThisOne, Bn: top.Bn, Bp: top.Bp})
+						top.Bn[hort] = oldBn
+						top.Bp[hort] = oldBp
+						continue
+					}
+					top.Bn[hort] = oldBn
+					top.Bp[hort] = oldBp
+				}
+			} else {
+				if currNode.Sons[1] != nil {
+					oldBn := top.Bn[hort]
+					oldBp := top.Bp[hort]
+					if vert {
+						top.Bp[hort] = currNode.HiMaxBound
+						top.Bn[hort] = currNode.OtherBound
+					} else {
+						top.Bp[hort] = currNode.HiMaxBound
+						top.Bn[hort] = currNode.Size[d]
+					}
+
+					if t.boundsOverlapBall(Xq, top.Bp, top.Bn, m, list) {
+						stack = append(stack, nSave{node: currNode.Sons[1], disc: nextDisc(d), state: ThisOne, Bn: top.Bn, Bp: top.Bp})
+						top.Bn[hort] = oldBn
+						top.Bp[hort] = oldBp
+						continue
+					}
+					top.Bn[hort] = oldBn
+					top.Bp[hort] = oldBp
+				}
+			}
+		case HiSon:
+			top.state = Done
+			if Xq[d] <= p {
+				if currNode.Sons[1] != nil {
+					oldBn := top.Bn[hort]
+					oldBp := top.Bp[hort]
+					if vert {
+						top.Bp[hort] = currNode.HiMaxBound
+						top.Bn[hort] = currNode.OtherBound
+					} else {
+						top.Bp[hort] = currNode.HiMaxBound
+						top.Bn[hort] = currNode.Size[d]
+					}
+
+					if t.boundsOverlapBall(Xq, top.Bp, top.Bn, m, list) {
+						stack = append(stack, nSave{node: currNode.Sons[1], disc: nextDisc(d), state: ThisOne, Bn: top.Bn, Bp: top.Bp})
+						top.Bn[hort] = oldBn
+						top.Bp[hort] = oldBp
+						continue
+					}
+					top.Bn[hort] = oldBn
+					top.Bp[hort] = oldBp
+				}
+			} else {
+				if currNode.Sons[0] != nil {
+					oldBn := top.Bn[hort]
+					oldBp := top.Bp[hort]
+					if vert {
+						top.Bp[hort] = currNode.Size[d]
+						top.Bn[hort] = currNode.LoMinBound
+					} else {
+						top.Bp[hort] = currNode.OtherBound
+						top.Bn[hort] = currNode.LoMinBound
+					}
+
+					if t.boundsOverlapBall(Xq, top.Bp, top.Bn, m, list) {
+						stack = append(stack, nSave{node: currNode.Sons[0], disc: nextDisc(d), state: ThisOne, Bn: top.Bn, Bp: top.Bp})
+						top.Bn[hort] = oldBn
+						top.Bp[hort] = oldBp
+						continue
+					}
+					top.Bn[hort] = oldBn
+					top.Bp[hort] = oldBp
+				}
+			}
+		case Done:
+			stack = stack[:topIdx]
+		}
+	}
+}
+
+func (t *Tree) addPriority(m int, list []Priority, Xq Box, node *Node) {
+	d := kdDist(Xq, node.Size)
+	for x := m - 1; x >= 0; x-- {
+		if d < list[x].Dist {
+			if x != m-1 {
+				list[x+1] = list[x]
+			}
+			list[x].Dist = d
+			list[x].Item = node.Item
+		} else {
+			break
+		}
+	}
+}
+
+func (t *Tree) boundsOverlapBall(Xq Box, Bp, Bn Box, m int, list []Priority) bool {
+	var sum float64
+	maxDist := list[m-1].Dist
+	for i := 0; i < 3; i++ {
+		if Xq[i] < Bn[i] {
+			d := float64(Xq[i] - Bn[i])
+			sum += d * d
+			if sum > maxDist {
+				return false
+			}
+		} else if Xq[i] > Bp[i] {
+			d := float64(Xq[i] - Bp[i])
+			sum += d * d
+			if sum > maxDist {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func kdDist(Xq, box Box) float64 {
+	var dx, dy, dz float64
+
+	if Xq[Left] > box[Right] {
+		dx = float64(Xq[Left] - box[Right])
+	} else if Xq[Right] < box[Left] {
+		dx = float64(box[Left] - Xq[Right])
+	}
+
+	if Xq[Bottom] > box[Top] {
+		dy = float64(Xq[Bottom] - box[Top])
+	} else if Xq[Top] < box[Bottom] {
+		dy = float64(box[Bottom] - Xq[Top])
+	}
+
+	if Xq[Floor] > box[Ceil] {
+		dz = float64(Xq[Floor] - box[Ceil])
+	} else if Xq[Ceil] < box[Floor] {
+		dz = float64(box[Floor] - Xq[Ceil])
+	}
+
+	return dx*dx + dy*dy + dz*dz
 }
 
 func nodeCmp(a, b *Node, disc int) bool {
@@ -625,7 +855,7 @@ func (t *Tree) ReallyDelete(data interface{}, oldSize Box) (Status, int, int) {
 		t.Root = t.kdDoDelete(elem, 0, stats)
 	} else {
 		parent := path[len(path)-1]
-		j := len(path) % 4
+		j := len(path) % 6
 		newElem := t.kdDoDelete(elem, j, stats)
 		if parent.Sons[1] == elem {
 			parent.Sons[1] = newElem
@@ -637,6 +867,7 @@ func (t *Tree) ReallyDelete(data interface{}, oldSize Box) (Status, int, int) {
 	t.ItemCount--
 	return OK, stats.numTries, stats.numDel
 }
+
 
 // Badness prints the balance ratio, count of single branch nodes, max depth, and dead node statistics to stdout.
 func (t *Tree) Badness() {
@@ -684,215 +915,5 @@ func (t *Tree) Badness() {
 
 	fmt.Printf("balance ratio=%g (the closer to 1.0, the better), #of nodes with only one branch=%d (%g), max depth=%d, dead=%d (%g)\n",
 		ratio, factor3, factor3Pct, maxLevels, t.DeadCount, deadPct)
-}
-
-// Priority represents an element for nearest neighbor search
-type Priority struct {
-	Dist float64
-	Item interface{}
-}
-
-// Nearest finds the m closest items to the point (x, y)
-func (t *Tree) Nearest(x, y int64, m int) []Priority {
-	if t.Root == nil || m <= 0 {
-		return nil
-	}
-
-	list := make([]Priority, m)
-	for i := range list {
-		list[i].Dist = math.MaxFloat64
-	}
-
-	Xq := Box{x, y, x, y}
-	Bp := Box{9223372036854775807, 9223372036854775807, 9223372036854775807, 9223372036854775807}
-	Bn := Box{-9223372036854775807, -9223372036854775807, -9223372036854775807, -9223372036854775807}
-
-	t.kdNeighbor(t.Root, Xq, m, list, Bp, Bn)
-
-	// Convert squared distances to actual distances
-	for i := range list {
-		if list[i].Dist != math.MaxFloat64 {
-			list[i].Dist = math.Sqrt(list[i].Dist)
-		}
-	}
-	return list
-}
-
-func (t *Tree) kdNeighbor(node *Node, Xq Box, m int, list []Priority, Bp, Bn Box) {
-	type nSave struct {
-		node  *Node
-		disc  int
-		state State
-		Bn    Box
-		Bp    Box
-	}
-
-	stack := make([]nSave, 0, 16)
-	stack = append(stack, nSave{node: node, disc: 0, state: ThisOne, Bn: Bn, Bp: Bp})
-
-	for len(stack) > 0 {
-		topIdx := len(stack) - 1
-		top := &stack[topIdx]
-		currNode := top.node
-		d := top.disc
-		p := currNode.Size[d]
-
-		hort := d & 1
-		vert := (d & 2) != 0
-
-		switch top.state {
-		case ThisOne:
-			top.state = LoSon
-			if currNode.Item != nil {
-				t.addPriority(m, list, Xq, currNode)
-			}
-		case LoSon:
-			top.state = HiSon
-			if Xq[d] <= p {
-				if currNode.Sons[0] != nil {
-					oldBn := top.Bn[hort]
-					oldBp := top.Bp[hort]
-					if vert {
-						top.Bp[hort] = currNode.Size[d]
-						top.Bn[hort] = currNode.LoMinBound
-					} else {
-						top.Bp[hort] = currNode.OtherBound
-						top.Bn[hort] = currNode.LoMinBound
-					}
-
-					if t.boundsOverlapBall(Xq, top.Bp, top.Bn, m, list) {
-						stack = append(stack, nSave{node: currNode.Sons[0], disc: nextDisc(d), state: ThisOne, Bn: top.Bn, Bp: top.Bp})
-						top.Bn[hort] = oldBn
-						top.Bp[hort] = oldBp
-						continue
-					}
-					top.Bn[hort] = oldBn
-					top.Bp[hort] = oldBp
-				}
-			} else {
-				if currNode.Sons[1] != nil {
-					oldBn := top.Bn[hort]
-					oldBp := top.Bp[hort]
-					if vert {
-						top.Bp[hort] = currNode.HiMaxBound
-						top.Bn[hort] = currNode.OtherBound
-					} else {
-						top.Bp[hort] = currNode.HiMaxBound
-						top.Bn[hort] = currNode.Size[d]
-					}
-
-					if t.boundsOverlapBall(Xq, top.Bp, top.Bn, m, list) {
-						stack = append(stack, nSave{node: currNode.Sons[1], disc: nextDisc(d), state: ThisOne, Bn: top.Bn, Bp: top.Bp})
-						top.Bn[hort] = oldBn
-						top.Bp[hort] = oldBp
-						continue
-					}
-					top.Bn[hort] = oldBn
-					top.Bp[hort] = oldBp
-				}
-			}
-		case HiSon:
-			top.state = Done
-			if Xq[d] <= p {
-				if currNode.Sons[1] != nil {
-					oldBn := top.Bn[hort]
-					oldBp := top.Bp[hort]
-					if vert {
-						top.Bp[hort] = currNode.HiMaxBound
-						top.Bn[hort] = currNode.OtherBound
-					} else {
-						top.Bp[hort] = currNode.HiMaxBound
-						top.Bn[hort] = currNode.Size[d]
-					}
-
-					if t.boundsOverlapBall(Xq, top.Bp, top.Bn, m, list) {
-						stack = append(stack, nSave{node: currNode.Sons[1], disc: nextDisc(d), state: ThisOne, Bn: top.Bn, Bp: top.Bp})
-						top.Bn[hort] = oldBn
-						top.Bp[hort] = oldBp
-						continue
-					}
-					top.Bn[hort] = oldBn
-					top.Bp[hort] = oldBp
-				}
-			} else {
-				if currNode.Sons[0] != nil {
-					oldBn := top.Bn[hort]
-					oldBp := top.Bp[hort]
-					if vert {
-						top.Bp[hort] = currNode.Size[d]
-						top.Bn[hort] = currNode.LoMinBound
-					} else {
-						top.Bp[hort] = currNode.OtherBound
-						top.Bn[hort] = currNode.LoMinBound
-					}
-
-					if t.boundsOverlapBall(Xq, top.Bp, top.Bn, m, list) {
-						stack = append(stack, nSave{node: currNode.Sons[0], disc: nextDisc(d), state: ThisOne, Bn: top.Bn, Bp: top.Bp})
-						top.Bn[hort] = oldBn
-						top.Bp[hort] = oldBp
-						continue
-					}
-					top.Bn[hort] = oldBn
-					top.Bp[hort] = oldBp
-				}
-			}
-		case Done:
-			stack = stack[:topIdx]
-		}
-	}
-}
-
-func (t *Tree) addPriority(m int, list []Priority, Xq Box, node *Node) {
-	d := kdDist(Xq, node.Size)
-	for x := m - 1; x >= 0; x-- {
-		if d < list[x].Dist {
-			if x != m-1 {
-				list[x+1] = list[x]
-			}
-			list[x].Dist = d
-			list[x].Item = node.Item
-		} else {
-			break
-		}
-	}
-}
-
-func (t *Tree) boundsOverlapBall(Xq Box, Bp, Bn Box, m int, list []Priority) bool {
-	var sum float64
-	maxDist := list[m-1].Dist
-	for i := 0; i < 2; i++ {
-		if Xq[i] < Bn[i] {
-			d := float64(Xq[i] - Bn[i])
-			sum += d * d
-			if sum > maxDist {
-				return false
-			}
-		} else if Xq[i] > Bp[i] {
-			d := float64(Xq[i] - Bp[i])
-			sum += d * d
-			if sum > maxDist {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func kdDist(Xq, box Box) float64 {
-	var dx, dy float64
-
-	if Xq[Left] > box[Right] {
-		dx = float64(Xq[Left] - box[Right])
-	} else if Xq[Right] < box[Left] {
-		dx = float64(box[Left] - Xq[Right])
-	}
-
-	if Xq[Bottom] > box[Top] {
-		dy = float64(Xq[Bottom] - box[Top])
-	} else if Xq[Top] < box[Bottom] {
-		dy = float64(box[Bottom] - Xq[Top])
-	}
-
-	return dx*dx + dy*dy
 }
 

@@ -65,6 +65,85 @@ end
     @test count_items(tree) == 999_000
 end
 
+@testset "KDTree Really Delete & Badness & Nearest" begin
+    tree = Tree{Int64}()
+    Random.seed!(42)
+    
+    # Generate 10,000 random boxes
+    boxes = Box[]
+    for i in 1:10000
+        x1 = rand(-100000:100000)
+        y1 = rand(-100000:100000)
+        x2 = x1 + rand(1:1000)
+        y2 = y1 + rand(1:1000)
+        b = (x1, y1, x2, y2)
+        push!(boxes, b)
+        KD.insert!(tree, i, b)
+    end
+    
+    @test count_items(tree) == 10000
+    
+    # 1. Test badness
+    badness(tree) # Just run and ensure no errors
+    
+    # 2. Test nearest search
+    for m in [1, 2, 4, 8, 16, 20]
+        for q in 1:50
+            qx = rand(-100000:100000)
+            qy = rand(-100000:100000)
+            
+            list = nearest(tree, qx, qy, m)
+            @test length(list) == m
+            
+            # Verify sorted by distance non-decreasing
+            for idx in 2:m
+                @test list[idx].dist >= list[idx-1].dist - 1e-9
+            end
+            
+            # Brute-force verification
+            brute_dists = Float64[]
+            for box in boxes
+                # Calculate the exact distance using our distance function
+                dx = 0.0
+                dy = 0.0
+                if qx > box[RIGHT]
+                    dx = Float64(qx - box[RIGHT])
+                elseif qx < box[LEFT]
+                    dx = Float64(box[LEFT] - qx)
+                end
+                if qy > box[TOP]
+                    dy = Float64(qy - box[TOP])
+                elseif qy < box[BOTTOM]
+                    dy = Float64(box[BOTTOM] - qy)
+                end
+                push!(brute_dists, sqrt(dx*dx + dy*dy))
+            end
+            sort!(brute_dists)
+            
+            # kd furthest element must be extremely close to brute m-th closest element
+            @test list[m].dist <= brute_dists[m] + 1e-6
+        end
+    end
+    
+    # Edge case: point inside box
+    qx = (boxes[1][LEFT] + boxes[1][RIGHT]) ÷ 2
+    qy = (boxes[1][BOTTOM] + boxes[1][TOP]) ÷ 2
+    list = nearest(tree, qx, qy, 1)
+    @test list[1].dist <= 1e-9
+    
+    # 3. Test really_delete!
+    for i in 10000:-1:1
+        status, _, _ = really_delete!(tree, i, boxes[i])
+        @test status == 1
+    end
+    
+    @test count_items(tree) == 0
+    
+    # Verify empty
+    @test length(search(tree, (-100001, -100001, 100001, 100001))) == 0
+end
+
+
 @testset "Million Boxes 64-bit Stress Test" begin
     tree = Tree{String}()
     Random.seed!(42)

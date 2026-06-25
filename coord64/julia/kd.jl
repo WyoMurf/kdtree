@@ -1,6 +1,6 @@
 module KD
 
-export Tree, Box, insert!, count_items, is_member, hard_delete!, search, LEFT, BOTTOM, RIGHT, TOP
+export Tree, Box, insert!, count_items, is_member, hard_delete!, really_delete!, badness, nearest, Priority, search, LEFT, BOTTOM, RIGHT, TOP
 
 const Box = NTuple{4, Int64}
 const LEFT = 1
@@ -294,5 +294,429 @@ end
 
 is_member(tree::Tree{T}, item::T, size::Box) where T = find_recursive(tree.root, 1, item, size)
 count_items(tree::Tree{T}) where T = tree.item_count - tree.dead_count
+
+function node_cmp(a::Node{T}, b::Node{T}, disc::Int) where T
+    val = a.size[disc] - b.size[disc]
+    if val == 0
+        new_disc = next_disc(disc)
+        while new_disc != disc
+            val = a.size[new_disc] - b.size[new_disc]
+            if val != 0
+                break
+            end
+            new_disc = next_disc(new_disc)
+        end
+        if val == 0
+            val = 1
+        end
+    end
+    return val >= 0
+end
+
+struct FindSave{T}
+    node::Node{T}
+    disc::Int
+    state::Ref{Int}
+end
+
+function find_min_max_node!(t::Tree{T}, j::Int, kd_minval_node::Ref{Node{T}}, kd_minval_nodesdad::Ref{Node{T}}, dir::Ref{Int}, newj::Ref{Int}) where T
+    kd_data_tries = 0
+    stack = FindSave{T}[
+        FindSave{T}(kd_minval_node[], next_disc(j), Ref(-1))
+    ]
+
+    if dir[] == 2 # HISON
+        while !isempty(stack)
+            top = stack[end]
+            top_item = top.node
+            m = top.disc
+
+            if top.state[] == -1 # KD_THIS_ONE
+                kd_data_tries += 1
+                if top_item.item !== nothing && !node_cmp(top_item, kd_minval_node[], j) && top_item !== kd_minval_node[]
+                    kd_minval_node[] = top_item
+                    kd_minval_nodesdad[] = stack[end-1].node
+                    if kd_minval_node[] === kd_minval_nodesdad[].sons[1]
+                        dir[] = 1
+                    else
+                        dir[] = 2
+                    end
+                    newj[] = m
+                end
+                top.state[] += 1
+            elseif top.state[] == 0 # LOSON
+                if top_item.sons[1] !== nothing
+                    top.state[] += 1
+                    push!(stack, FindSave{T}(top_item.sons[1], next_disc(m), Ref(-1)))
+                else
+                    top.state[] += 1
+                end
+            elseif top.state[] == 1 # HISON
+                if j == m && top_item.size[m] > kd_minval_node[].size[m]
+                    top.state[] += 1
+                else
+                    if top_item.sons[2] !== nothing
+                        top.state[] += 1
+                        push!(stack, FindSave{T}(top_item.sons[2], next_disc(m), Ref(-1)))
+                    else
+                        top.state[] += 1
+                    end
+                end
+            else
+                pop!(stack)
+            end
+        end
+        return kd_data_tries
+    else # LOSON
+        while !isempty(stack)
+            top = stack[end]
+            top_item = top.node
+            m = top.disc
+
+            if top.state[] == -1 # KD_THIS_ONE
+                kd_data_tries += 1
+                if top_item.item !== nothing && node_cmp(top_item, kd_minval_node[], j) && top_item !== kd_minval_node[]
+                    kd_minval_node[] = top_item
+                    kd_minval_nodesdad[] = stack[end-1].node
+                    if kd_minval_node[] === kd_minval_nodesdad[].sons[1]
+                        dir[] = 1
+                    else
+                        dir[] = 2
+                    end
+                    newj[] = m
+                end
+                top.state[] += 1
+            elseif top.state[] == 0 # LOSON
+                if j == m && top_item.size[m] < kd_minval_node[].size[m]
+                    top.state[] += 1
+                else
+                    if top_item.sons[1] !== nothing
+                        top.state[] += 1
+                        push!(stack, FindSave{T}(top_item.sons[1], next_disc(m), Ref(-1)))
+                    else
+                        top.state[] += 1
+                    end
+                end
+            elseif top.state[] == 1 # HISON
+                if top_item.sons[2] !== nothing
+                    top.state[] += 1
+                    push!(stack, FindSave{T}(top_item.sons[2], next_disc(m), Ref(-1)))
+                else
+                    top.state[] += 1
+                end
+            else
+                pop!(stack)
+            end
+        end
+        return kd_data_tries
+    end
+end
+
+mutable struct DeleteStats
+    num_tries::Int
+    num_del::Int
+end
+
+const delete_flip = Ref(false)
+
+function find_item_with_path(node::Union{Node{T}, Nothing}, disc::Int, item::T, size::Box, path::Vector{Node{T}}) where T
+    if node === nothing
+        return nothing, path
+    end
+    if node.item !== nothing && node.item == item
+        return node, path
+    end
+
+    val = size[disc] - node.size[disc]
+    if val == 0
+        ndisc = next_disc(disc)
+        while ndisc != disc
+            val = size[ndisc] - node.size[ndisc]
+            if val != 0
+                break
+            end
+            ndisc = next_disc(ndisc)
+        end
+        if val == 0
+            val = 1
+        end
+    end
+
+    child_idx = val >= 0 ? 2 : 1
+
+    if node.sons[child_idx] !== nothing
+        new_path = copy(path)
+        push!(new_path, node)
+        return find_item_with_path(node.sons[child_idx], next_disc(disc), item, size, new_path)
+    end
+
+    return nothing, path
+end
+
+function kd_do_delete!(t::Tree{T}, elem::Node{T}, j::Int, stats::DeleteStats) where T
+    delete_flip[] = !delete_flip[]
+
+    if elem.sons[1] === nothing && elem.sons[2] === nothing
+        return nothing
+    end
+
+    Q_ref = Ref{Node{T}}()
+    Qdad_ref = Ref{Node{T}}(elem)
+    Qson_ref = Ref{Int}(0)
+    newj_ref = Ref{Int}(0)
+
+    if elem.sons[2] === nothing
+        delete_flip[] = false
+    elseif elem.sons[1] === nothing
+        delete_flip[] = true
+    end
+
+    if !delete_flip[] # loson (sons[1])
+        Q_ref[] = elem.sons[1]
+        Qson_ref[] = 1
+        newj_ref[] = next_disc(j)
+        stats.num_tries += find_min_max_node!(t, j, Q_ref, Qdad_ref, Qson_ref, newj_ref)
+    else # hison (sons[2])
+        Q_ref[] = elem.sons[2]
+        Qson_ref[] = 2
+        newj_ref[] = next_disc(j)
+        stats.num_tries += find_min_max_node!(t, j, Q_ref, Qdad_ref, Qson_ref, newj_ref)
+    end
+
+    Q = Q_ref[]
+    Qdad = Qdad_ref[]
+    Qson = Qson_ref[]
+    newj = newj_ref[]
+
+    Qdad.sons[Qson] = kd_do_delete!(t, Q, newj, stats)
+    stats.num_del += 1
+    Q.sons[1] = elem.sons[1]
+    Q.sons[2] = elem.sons[2]
+    Q.lo_min_bound = elem.lo_min_bound
+    Q.other_bound = elem.other_bound
+    Q.hi_max_bound = elem.hi_max_bound
+    return Q
+end
+
+function really_delete!(tree::Tree{T}, item::T, old_size::Box) where T
+    elem, path = find_item_with_path(tree.root, 1, item, old_size, Node{T}[])
+    if elem === nothing
+        return (-4, 0, 0)
+    end
+
+    stats = DeleteStats(0, 1)
+
+    if elem === tree.root
+        tree.root = kd_do_delete!(tree, elem, 1, stats)
+    else
+        parent = path[end]
+        j = (length(path) % 4) + 1
+        new_elem = kd_do_delete!(tree, elem, j, stats)
+        if parent.sons[2] === elem
+            parent.sons[2] = new_elem
+        else
+            parent.sons[1] = new_elem
+        end
+    end
+
+    tree.item_count -= 1
+    return (1, stats.num_tries, stats.num_del)
+end
+
+function badness(tree::Tree{T}) where T
+    factor3 = 0
+    max_levels = 0
+
+    function stats!(node, level)
+        if node === nothing
+            return
+        end
+        if (node.sons[1] !== nothing || node.sons[2] !== nothing) &&
+           !(node.sons[1] !== nothing && node.sons[2] !== nothing)
+            factor3 += 1
+        end
+        if level > max_levels
+            max_levels = level
+        end
+        stats!(node.sons[1], level + 1)
+        stats!(node.sons[2], level + 1)
+    end
+
+    stats!(tree.root, 1)
+
+    targdepth = tree.item_count > 0 ? floor(log2(tree.item_count)) + 1 : 0
+    ratio = targdepth > 0 ? max_levels / targdepth : 0.0
+
+    dead_pct = tree.item_count > 0 ? (tree.dead_count / tree.item_count) * 100.0 : 0.0
+    factor3_pct = tree.item_count > 0 ? (factor3 / tree.item_count) * 100.0 : 0.0
+
+    println("balance ratio=$ratio (the closer to 1.0, the better), #of nodes with only one branch=$factor3 ($factor3_pct), max depth=$max_levels, dead=$(tree.dead_count) ($dead_pct)")
+end
+
+struct Priority{T}
+    dist::Float64
+    item::Union{T, Nothing}
+end
+
+function nearest(tree::Tree{T}, x::Int64, y::Int64, m::Int) where T
+    if tree.root === nothing || m <= 0
+        return Priority{T}[]
+    end
+
+    list = [Priority{T}(Inf, nothing) for _ in 1:m]
+    xq_box = (x, y, x, y)
+    bp = [typemax(Int64) for _ in 1:4]
+    bn = [typemin(Int64) for _ in 1:4]
+
+    kd_neighbor!(tree.root, xq_box, m, list, bp, bn)
+
+    return [Priority{T}(sqrt(p.dist), p.item) for p in list]
+end
+
+function kd_neighbor!(node::Node{T}, xq::Box, m::Int, list::Vector{Priority{T}}, bp::Vector{Int64}, bn::Vector{Int64}) where T
+    stack = Tuple{Node{T}, Int, Int, Vector{Int64}, Vector{Int64}}[]
+    push!(stack, (node, 1, 0, copy(bn), copy(bp)))
+
+    while !isempty(stack)
+        curr_node, d, state, cur_bn, cur_bp = pop!(stack)
+        p = curr_node.size[d]
+        hort = ((d - 1) & 1) + 1
+        vert = d > 2
+
+        if state == 0
+            if curr_node.item !== nothing
+                add_priority!(m, list, xq, curr_node)
+            end
+            push!(stack, (curr_node, d, 1, cur_bn, cur_bp))
+        elseif state == 1
+            push!(stack, (curr_node, d, 2, cur_bn, cur_bp))
+            if xq[d] <= p
+                if curr_node.sons[1] !== nothing
+                    old_bn = cur_bn[hort]
+                    old_bp = cur_bp[hort]
+                    if vert
+                        cur_bp[hort] = curr_node.size[d]
+                        cur_bn[hort] = curr_node.lo_min_bound
+                    else
+                        cur_bp[hort] = curr_node.other_bound
+                        cur_bn[hort] = curr_node.lo_min_bound
+                    end
+                    if bounds_overlap_ball(xq, cur_bp, cur_bn, m, list)
+                        push!(stack, (curr_node.sons[1], next_disc(d), 0, copy(cur_bn), copy(cur_bp)))
+                    end
+                    cur_bn[hort] = old_bn
+                    cur_bp[hort] = old_bp
+                end
+            else
+                if curr_node.sons[2] !== nothing
+                    old_bn = cur_bn[hort]
+                    old_bp = cur_bp[hort]
+                    if vert
+                        cur_bp[hort] = curr_node.hi_max_bound
+                        cur_bn[hort] = curr_node.other_bound
+                    else
+                        cur_bp[hort] = curr_node.hi_max_bound
+                        cur_bn[hort] = curr_node.size[d]
+                    end
+                    if bounds_overlap_ball(xq, cur_bp, cur_bn, m, list)
+                        push!(stack, (curr_node.sons[2], next_disc(d), 0, copy(cur_bn), copy(cur_bp)))
+                    end
+                    cur_bn[hort] = old_bn
+                    cur_bp[hort] = old_bp
+                end
+            end
+        elseif state == 2
+            if xq[d] <= p
+                if curr_node.sons[2] !== nothing
+                    old_bn = cur_bn[hort]
+                    old_bp = cur_bp[hort]
+                    if vert
+                        cur_bp[hort] = curr_node.hi_max_bound
+                        cur_bn[hort] = curr_node.other_bound
+                    else
+                        cur_bp[hort] = curr_node.hi_max_bound
+                        cur_bn[hort] = curr_node.size[d]
+                    end
+                    if bounds_overlap_ball(xq, cur_bp, cur_bn, m, list)
+                        push!(stack, (curr_node.sons[2], next_disc(d), 0, copy(cur_bn), copy(cur_bp)))
+                    end
+                    cur_bn[hort] = old_bn
+                    cur_bp[hort] = old_bp
+                end
+            else
+                if curr_node.sons[1] !== nothing
+                    old_bn = cur_bn[hort]
+                    old_bp = cur_bp[hort]
+                    if vert
+                        cur_bp[hort] = curr_node.size[d]
+                        cur_bn[hort] = curr_node.lo_min_bound
+                    else
+                        cur_bp[hort] = curr_node.other_bound
+                        cur_bn[hort] = curr_node.lo_min_bound
+                    end
+                    if bounds_overlap_ball(xq, cur_bp, cur_bn, m, list)
+                        push!(stack, (curr_node.sons[1], next_disc(d), 0, copy(cur_bn), copy(cur_bp)))
+                    end
+                    cur_bn[hort] = old_bn
+                    cur_bp[hort] = old_bp
+                end
+            end
+        end
+    end
+end
+
+function add_priority!(m::Int, list::Vector{Priority{T}}, xq::Box, node::Node{T}) where T
+    d = kd_dist_sq(xq, node.size)
+    for x in m:-1:1
+        if d < list[x].dist
+            if x != m
+                list[x+1] = list[x]
+            end
+            list[x] = Priority{T}(d, node.item)
+        else
+            break
+        end
+    end
+end
+
+function bounds_overlap_ball(xq::Box, bp::Vector{Int64}, bn::Vector{Int64}, m::Int, list::Vector{Priority{T}}) where T
+    sum_dist = 0.0
+    max_dist = list[m].dist
+    for i in 1:2
+        if xq[i] < bn[i]
+            d = Float64(xq[i] - bn[i])
+            sum_dist += d * d
+            if sum_dist > max_dist
+                return false
+            end
+        elseif xq[i] > bp[i]
+            d = Float64(xq[i] - bp[i])
+            sum_dist += d * d
+            if sum_dist > max_dist
+                return false
+            end
+        end
+    end
+    return true
+end
+
+function kd_dist_sq(xq::Box, box_size::Box)
+    dx = 0.0
+    dy = 0.0
+
+    if xq[LEFT] > box_size[RIGHT]
+        dx = Float64(xq[LEFT] - box_size[RIGHT])
+    elseif xq[RIGHT] < box_size[LEFT]
+        dx = Float64(box_size[LEFT] - xq[RIGHT])
+    end
+
+    if xq[BOTTOM] > box_size[TOP]
+        dy = Float64(xq[BOTTOM] - box_size[TOP])
+    elseif xq[TOP] < box_size[BOTTOM]
+        dy = Float64(box_size[BOTTOM] - xq[TOP])
+    end
+
+    return dx*dx + dy*dy
+end
 
 end
