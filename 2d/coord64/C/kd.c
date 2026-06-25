@@ -735,7 +735,7 @@ static void resolve(register kd_list **lo, register kd_list **eq, register kd_li
 /* correction: the rest are put to help balance lo and hi sides. */
 {
     kd_list *others;
-    int cur_disc, val;
+    int cur_disc, val=0;
 
     others = CDR(*eq);
     RCDR(*eq, NIL);
@@ -984,7 +984,7 @@ void kd_print_path(void) /* this routine is for debug */
 	{
 		KDElem *elem;
 		elem = path_to_item[i];
-		printf("%d: \tElem: %ld [%lx] lo=%d hi=%d, other=%d, size= \t(%d\t%d\t%d\t%d)  Loson:%lx[%ld]  HiSon:%lx[%ld]\n",
+		printf("%d: \tElem: %ld [%lx] lo=%lld hi=%lld, other=%lld, size= \t(%lld\t%lld\t%lld\t%lld)  Loson:%lx[%ld]  HiSon:%lx[%ld]\n",
 			   i,(long)elem->item, (unsigned long)elem,
 			   elem->lo_min_bound, elem->hi_max_bound, elem->other_bound,
 			   elem->size[0],elem->size[1],elem->size[2],elem->size[3],
@@ -1602,11 +1602,11 @@ static void pr_tree(KDElem *elem, int disc, int depth)
     int i;
 
     for (i = 0;  i < depth;  i++) putchar(' ');
-    Printf("%ld: %d %d %d (", (long) elem->item, elem->lo_min_bound,
+    Printf("%ld: %lld %lld %lld (", (long) elem->item, elem->lo_min_bound,
 		  elem->other_bound, elem->hi_max_bound);
     for (i = 0;  i < KD_BOX_MAX;  i++) {
 	if (i == disc) putchar('*');
-	Printf("%d ", elem->size[i]);
+	Printf("%lld ", elem->size[i]);
     }
     Printf(")\n");
     for (i = 0;  i < 2;  i++)
@@ -2092,7 +2092,7 @@ void kd_print_nearest(kd_tree tree, long long x, long long y, int m)
 			xz, m);
 	for(i=0;i<m;i++)
 	{
-		fprintf(stderr,"Nearest Neighbor: dist to center: %g units. elem=%lx. item=%ld. ([%d,%d]->[%d,%d])\n",
+		fprintf(stderr,"Nearest Neighbor: dist to center: %g units. elem=%lx. item=%ld. ([%lld,%lld]->[%lld,%lld])\n",
 				list[i].dist, (unsigned long)list[i].elem,(long)list[i].elem->item,
 				list[i].elem->size[KD_LEFT],
 				list[i].elem->size[KD_BOTTOM],

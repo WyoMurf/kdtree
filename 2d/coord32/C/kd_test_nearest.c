@@ -18,6 +18,9 @@
 #define srandom(x) srand(x)
 #endif
 
+#define random() rand()
+#define srandom(x) srand(x)
+
 #define KD_BOXES	10000
 #define NUM_QUERIES	100
 #define MAX_NEIGHBORS	20

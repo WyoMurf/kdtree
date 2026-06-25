@@ -410,7 +410,7 @@ impl<'a, T> Iterator for Generator<'a, T> {
 
 
 impl<T: PartialEq + Clone> Tree<T> {
-    pub fn start(&self, area: KdBox) -> Generator<T> {
+    pub fn start(&self, area: KdBox) -> Generator<'_, T> {
         let mut stack = Vec::new();
         if let Some(ref root) = self.root {
             stack.push(Save {

@@ -982,7 +982,7 @@ void kd_print_path(void) /* this routine is for debug */
 	{
 		KDElem *elem;
 		elem = path_to_item[i];
-		printf("%d: \tElem: %ld [%lx] lo=%lld hi=%lld, other=%lld, size= \t(%lld\t%lld\t%lld\t%lld\t%lld\t%lld)  Loson:%lx[%ld]  HiSon:%lx[%ld]\n",
+		printf("%d: \tElem: %ld [%lx] lo=%d hi=%d, other=%d, size= \t(%d\t%d\t%d\t%d\t%d\t%d)  Loson:%lx[%ld]  HiSon:%lx[%ld]\n",
 			   i,(long)elem->item, (unsigned long)elem,
 			   elem->lo_min_bound, elem->hi_max_bound, elem->other_bound,
 			   elem->size[0],elem->size[1],elem->size[2],elem->size[3],elem->size[4],elem->size[5],

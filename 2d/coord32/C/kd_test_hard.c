@@ -15,6 +15,8 @@
 #define srandom(x) srand(x)
 #endif
 
+#define random() rand()
+#define srandom(x) srand(x)
 
 
 #define KD_BOXES	1000000
