@@ -15,6 +15,11 @@ impl Coord for i64 {
     fn from_i32(val: i32) -> Self { val as i64 }
 }
 
+impl Coord for i128 {
+    #[inline]
+    fn from_i32(val: i32) -> Self { val as i128 }
+}
+
 pub type KdBox<C = i32> = [C; 4];
 
 pub const LEFT: usize = 0;

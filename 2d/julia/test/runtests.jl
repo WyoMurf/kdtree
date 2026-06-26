@@ -143,3 +143,14 @@ end
     @test length(search(tree, (-100001, -100001, 100001, 100001))) == 0
 end
 
+@testset "Int128 coordinates" begin
+    tree = Tree{String, Int128}()
+    box1 = (Int128(0), Int128(0), Int128(10), Int128(10))
+    insert!(tree, "item1", box1)
+    @test count_items(tree) == 1
+    @test is_member(tree, "item1", box1)
+    
+    found = search(tree, (Int128(0), Int128(0), Int128(15), Int128(15)))
+    @test length(found) == 1
+end
+

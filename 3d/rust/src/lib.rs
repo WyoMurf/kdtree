@@ -30,6 +30,17 @@ impl Coord for i64 {
     fn to_f64(self) -> f64 { self as f64 }
 }
 
+impl Coord for i128 {
+    #[inline]
+    fn from_i32(val: i32) -> Self { val as i128 }
+    #[inline]
+    fn min_value() -> Self { i128::MIN }
+    #[inline]
+    fn max_value() -> Self { i128::MAX }
+    #[inline]
+    fn to_f64(self) -> f64 { self as f64 }
+}
+
 // Box defines a 3D bounding box [left, bottom, floor, right, top, ceil]
 pub type KdBox<C = i32> = [C; 6];
 
