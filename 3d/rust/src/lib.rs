@@ -320,8 +320,8 @@ impl<T: PartialEq + Clone, C: Coord> Tree<T, C> {
 
         let mut q_idx: usize;
         let mut q_dad_idx: usize = elem_idx;
-        let mut q_son: usize = 0;
-        let mut newj: usize = 0;
+        let mut q_son: usize;
+        let mut newj: usize;
         
         if self.arena[elem_idx].sons[1].is_none() {
             self.delete_flip = false;
@@ -879,7 +879,6 @@ mod tests {
     use super::*;
 
     const KD_BOXES: usize = 10000;
-    const KD_REGIONS: usize = 100;
     const MIN_RANGE: i32 = -100000;
     const MAX_RANGE: i32 = 100000;
     const RANGE_SPAN: i32 = MAX_RANGE - MIN_RANGE + 1;
