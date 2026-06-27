@@ -9,7 +9,7 @@ This library requires Go 1.18+ to support Generic type constraints.
 You do not need to configure anything during the build process. Function names remain clean and idiomatic, without any bit-size suffixes. You define the bit-width when you instantiate the generic types.
 
 ```go
-import "github.com/WyoMurf/kdtree/3d/coord32/go" // or appropriate import path
+import "github.com/WyoMurf/kdtree/3d/go"
 
 func main() {
     // Instantiate a 32-bit KDTree
