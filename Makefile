@@ -10,10 +10,10 @@ all:
 
 test: 
 	cd C; make test; cd ../
-	cd 2d/go; go build; cd ../..
+	cd 2d/go; go test; cd ../..
 	cd 2d/rust; cargo test; cd ../..
 	cd 2d/julia; make test; cd ../..
-	cd 3d/go; go build; cd ../..
+	cd 3d/go; go test; cd ../..
 	cd 3d/rust; cargo test; cd ../..
 	cd 3d/julia; make test; cd ../..
 	
