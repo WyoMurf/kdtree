@@ -7,7 +7,7 @@ This directory contains the unified Rust implementation of a 2D KD-Tree, paramet
 You do not need any build-time feature flags to choose between 32-bit, 64-bit, and 128-bit coordinate widths. The `Tree` struct uses a generic type parameter bounded by a custom `Coord` trait. Function names remain clean and idiomatic, without any bit-size suffixes.
 
 ```rust
-use kdtree::{Tree, KdBox};
+use kdtree2d::{Tree, KdBox};
 
 fn main() {
     // Instantiate a 32-bit KDTree

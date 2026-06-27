@@ -1,12 +1,12 @@
 [package]
-name = "kdtree-rust"
+name = "kdtree-2d-rust"
 version = "1.0.0"
 edition = "2021"
 authors = ["Murf <murf@parsetree.com>"]
-description = "A fast, memory-safe KD-tree implementation"
+description = "A fast, memory-safe 2D KD-tree implementation"
 repository = "https://github.com/WyoMurf/kdtree"
 license = "LGPL-2.0"
 
 [lib]
-name = "kdtree"
+name = "kdtree2d"
 path = "src/lib.rs"
