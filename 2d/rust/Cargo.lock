@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "kdtree-rust"
+name = "kdtree-2d-rust"
 version = "1.0.0"
