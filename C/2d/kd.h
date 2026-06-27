@@ -50,33 +50,9 @@
  */
 #endif
 
-/* 32-bit vs 64-bit precision configuration */
+/* 32-bit vs 64-bit vs 128-bit precision configuration */
 #if defined(COORD_128)
-#define kd_create         kd_2d_128_create
-#define kd_build          kd_2d_128_build
-#define kd_destroy        kd_2d_128_destroy
-#define kd_is_member      kd_2d_128_is_member
-#define kd_insert         kd_2d_128_insert
-#define kd_delete         kd_2d_128_delete
-#define kd_really_delete  kd_2d_128_really_delete
-#define kd_start          kd_2d_128_start
-#define kd_next           kd_2d_128_next
-#define kd_finish         kd_2d_128_finish
-#define kd_count          kd_2d_128_count
-#define kd_print          kd_2d_128_print
-#define kd_badness        kd_2d_128_badness
-#define kd_rebuild        kd_2d_128_rebuild
-#define kd_nearest        kd_2d_128_nearest
-#define kd_print_nearest  kd_2d_128_print_nearest
-#define collect_nodes     kd_2d_128_collect_nodes
-#define kd_delete_stats   kd_2d_128_delete_stats
-#define kd_do_delete      kd_2d_128_do_delete
-#define kd_err_string     kd_2d_128_err_string
-#define kd_print_path     kd_2d_128_print_path
-#define kd_set_build_depth kd_2d_128_set_build_depth
-#define NEW_PATH          kd_2d_128_NEW_PATH
-#define unload_items      kd_2d_128_unload_items
-#define kd_pkg_name       kd_2d_128_pkg_name
+typedef __int128 coord_t;
 #elif defined(COORD_64)
 typedef int64_t coord_t;
 #else
@@ -128,23 +104,14 @@ typedef int32_t coord_t;
 #define kd_nearest        kd_2d_64_nearest
 #define kd_print_nearest  kd_2d_64_print_nearest
 #define collect_nodes     kd_2d_64_collect_nodes
-
 #define kd_delete_stats   kd_2d_64_delete_stats
-
 #define kd_do_delete      kd_2d_64_do_delete
-
 #define kd_err_string     kd_2d_64_err_string
-
 #define kd_print_path     kd_2d_64_print_path
-
 #define kd_set_build_depth kd_2d_64_set_build_depth
-
 #define NEW_PATH          kd_2d_64_NEW_PATH
-
 #define unload_items      kd_2d_64_unload_items
-
 #define kd_pkg_name       kd_2d_64_pkg_name
-
 #else
 #define kd_create         kd_2d_32_create
 #define kd_build          kd_2d_32_build
@@ -163,23 +130,14 @@ typedef int32_t coord_t;
 #define kd_nearest        kd_2d_32_nearest
 #define kd_print_nearest  kd_2d_32_print_nearest
 #define collect_nodes     kd_2d_32_collect_nodes
-
 #define kd_delete_stats   kd_2d_32_delete_stats
-
 #define kd_do_delete      kd_2d_32_do_delete
-
 #define kd_err_string     kd_2d_32_err_string
-
 #define kd_print_path     kd_2d_32_print_path
-
 #define kd_set_build_depth kd_2d_32_set_build_depth
-
 #define NEW_PATH          kd_2d_32_NEW_PATH
-
 #define unload_items      kd_2d_32_unload_items
-
 #define kd_pkg_name       kd_2d_32_pkg_name
-
 #endif
 
 extern char *kd_pkg_name;	/* For error handling */

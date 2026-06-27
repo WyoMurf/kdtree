@@ -297,6 +297,7 @@ impl<T: PartialEq + Clone, C: Coord> Tree<T, C> {
         if is_match {
             let mut stats = (0, 0); // (tries, del)
             let q_opt = self.kd_do_delete(elem_idx, disc, &mut stats);
+            self.free_node(elem_idx);
             self.item_count -= 1;
             return q_opt;
         }
@@ -325,7 +326,6 @@ impl<T: PartialEq + Clone, C: Coord> Tree<T, C> {
         self.delete_flip = !self.delete_flip;
 
         if self.arena[elem_idx].sons[0].is_none() && self.arena[elem_idx].sons[1].is_none() {
-            self.free_node(elem_idx);
             return None;
         }
 
@@ -363,7 +363,6 @@ impl<T: PartialEq + Clone, C: Coord> Tree<T, C> {
         self.arena[q_idx].other_bound = self.arena[elem_idx].other_bound;
         self.arena[q_idx].hi_max_bound = self.arena[elem_idx].hi_max_bound;
         
-        self.free_node(elem_idx);
         Some(q_idx)
     }
 
@@ -888,70 +887,146 @@ impl Lcg {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::Lcg;
 
-    const KD_BOXES: usize = 10000;
-    const MIN_RANGE: i32 = -100000;
-    const MAX_RANGE: i32 = 100000;
-    const RANGE_SPAN: i32 = MAX_RANGE - MIN_RANGE + 1;
-    const BOX_RANGE: i32 = 1000;
+    macro_rules! generate_tests {
+        ($t:ty, $mod_name:ident) => {
+            mod $mod_name {
+                use super::*;
 
-    fn rand_box(rng: &mut Lcg) -> KdBox<i32> {
-        let left = rng.next_range(RANGE_SPAN) + MIN_RANGE;
-        let bottom = rng.next_range(RANGE_SPAN) + MIN_RANGE;
-        let floor = rng.next_range(RANGE_SPAN) + MIN_RANGE;
-        let right = left + rng.next_range(BOX_RANGE);
-        let top = bottom + rng.next_range(BOX_RANGE);
-        let ceil = floor + rng.next_range(BOX_RANGE);
-        [left, bottom, floor, right, top, ceil]
-    }
+                const KD_BOXES: usize = 10000;
+                const MIN_RANGE: i32 = -100000;
+                const MAX_RANGE: i32 = 100000;
+                const RANGE_SPAN: i32 = MAX_RANGE - MIN_RANGE + 1;
+                const BOX_RANGE: i32 = 1000;
 
-    #[test]
-    fn test_kd_3d() {
-        let mut tree = Tree::<&str, i32>::new();
-        let box1: KdBox<i32> = [0, 0, 0, 10, 10, 10];
-        let box2: KdBox<i32> = [20, 20, 20, 30, 30, 30];
-        let box3: KdBox<i32> = [5, 5, 5, 15, 15, 15];
-
-        tree.insert("item1", box1);
-        tree.insert("item2", box2);
-        tree.insert("item3", box3);
-
-        assert_eq!(tree.count(), 3);
-        assert!(tree.is_member(&"item2", &box2));
-    }
-
-    #[test]
-    fn test_nearest() {
-        let mut rng = Lcg { state: 42 };
-        let mut boxes = Vec::new();
-        let mut tree = Tree::<usize, i32>::new();
-
-        for i in 0..KD_BOXES {
-            let b = rand_box(&mut rng);
-            boxes.push(b);
-            tree.insert(i, b);
-        }
-
-        for m in [1, 2, 4, 8, 16] {
-            for _ in 0..50 {
-                let qx = rng.next_range(RANGE_SPAN) + MIN_RANGE;
-                let qy = rng.next_range(RANGE_SPAN) + MIN_RANGE;
-                let qz = rng.next_range(RANGE_SPAN) + MIN_RANGE;
-
-                let list = tree.nearest(qx, qy, qz, m);
-                assert_eq!(list.len(), m);
-
-                for i in 1..m {
-                    assert!(list[i].dist >= list[i - 1].dist - 1e-9);
+                fn rand_box(rng: &mut Lcg) -> KdBox<$t> {
+                    let left = rng.next_range(RANGE_SPAN) + MIN_RANGE;
+                    let bottom = rng.next_range(RANGE_SPAN) + MIN_RANGE;
+                    let floor = rng.next_range(RANGE_SPAN) + MIN_RANGE;
+                    let right = left + rng.next_range(BOX_RANGE);
+                    let top = bottom + rng.next_range(BOX_RANGE);
+                    let ceil = floor + rng.next_range(BOX_RANGE);
+                    [
+                        <$t>::from_i32(left),
+                        <$t>::from_i32(bottom),
+                        <$t>::from_i32(floor),
+                        <$t>::from_i32(right),
+                        <$t>::from_i32(top),
+                        <$t>::from_i32(ceil),
+                    ]
                 }
 
-                let mut brute: Vec<f64> = boxes.iter()
-                    .map(|b| kd_dist_sq(&[qx, qy, qz, qx, qy, qz], b).sqrt())
-                    .collect();
-                brute.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                #[test]
+                fn test_kd_3d() {
+                    let mut tree = Tree::<&str, $t>::new();
+                    let box1: KdBox<$t> = [<$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(10), <$t>::from_i32(10), <$t>::from_i32(10)];
+                    let box2: KdBox<$t> = [<$t>::from_i32(20), <$t>::from_i32(20), <$t>::from_i32(20), <$t>::from_i32(30), <$t>::from_i32(30), <$t>::from_i32(30)];
+                    let box3: KdBox<$t> = [<$t>::from_i32(5), <$t>::from_i32(5), <$t>::from_i32(5), <$t>::from_i32(15), <$t>::from_i32(15), <$t>::from_i32(15)];
 
-                assert!(list[m - 1].dist <= brute[m - 1] + 1e-6);
+                    tree.insert("item1", box1);
+                    tree.insert("item2", box2);
+                    tree.insert("item3", box3);
+
+                    assert_eq!(tree.count(), 3);
+                    assert!(tree.is_member(&"item2", &box2));
+                }
+
+                #[test]
+                fn test_nearest() {
+                    let mut rng = Lcg { state: 42 };
+                    let mut boxes = Vec::new();
+                    let mut tree = Tree::<usize, $t>::new();
+
+                    for i in 0..KD_BOXES {
+                        let b = rand_box(&mut rng);
+                        boxes.push(b);
+                        tree.insert(i, b);
+                    }
+
+                    for m in [1, 2, 4, 8, 16] {
+                        for _ in 0..50 {
+                            let qx = <$t>::from_i32(rng.next_range(RANGE_SPAN) + MIN_RANGE);
+                            let qy = <$t>::from_i32(rng.next_range(RANGE_SPAN) + MIN_RANGE);
+                            let qz = <$t>::from_i32(rng.next_range(RANGE_SPAN) + MIN_RANGE);
+
+                            let list = tree.nearest(qx, qy, qz, m);
+                            assert_eq!(list.len(), m);
+
+                            for i in 1..m {
+                                assert!(list[i].dist >= list[i - 1].dist - 1e-9);
+                            }
+
+                            let mut brute: Vec<f64> = boxes.iter()
+                                .map(|b| kd_dist_sq(&[qx, qy, qz, qx, qy, qz], b).sqrt())
+                                .collect();
+                            brute.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+                            assert!(list[m - 1].dist <= brute[m - 1] + 1e-6);
+                        }
+                    }
+                }
+
+                #[test]
+                fn test_kd_tree_hard_delete() {
+                    let mut tree = Tree::<&str, $t>::new();
+                    let box1: KdBox<$t> = [<$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(10), <$t>::from_i32(10), <$t>::from_i32(10)];
+                    let box2: KdBox<$t> = [<$t>::from_i32(20), <$t>::from_i32(20), <$t>::from_i32(20), <$t>::from_i32(30), <$t>::from_i32(30), <$t>::from_i32(30)];
+                    let box3: KdBox<$t> = [<$t>::from_i32(5), <$t>::from_i32(5), <$t>::from_i32(5), <$t>::from_i32(15), <$t>::from_i32(15), <$t>::from_i32(15)];
+
+                    tree.insert("item1", box1);
+                    tree.insert("item2", box2);
+                    tree.insert("item3", box3);
+
+                    assert!(tree.hard_delete(&"item1", &box1));
+                    assert_eq!(tree.count(), 2);
+                    assert!(tree.is_member(&"item2", &box2));
+                    assert!(tree.is_member(&"item3", &box3));
+                }
+
+                #[test]
+                fn test_million_boxes() {
+                    let mut tree = Tree::<String, $t>::new();
+                    let mut rng = Lcg { state: 42 };
+                    let mut boxes_to_delete = Vec::new();
+
+                    for i in 0..100_000 { // Reduced to 100k to keep test suite fast
+                        let x1 = rng.next_range(100000);
+                        let y1 = rng.next_range(100000);
+                        let z1 = rng.next_range(100000);
+                        let x2 = x1 + rng.next_range(100) + 1;
+                        let y2 = y1 + rng.next_range(100) + 1;
+                        let z2 = z1 + rng.next_range(100) + 1;
+                        let b: KdBox<$t> = [<$t>::from_i32(x1), <$t>::from_i32(y1), <$t>::from_i32(z1), <$t>::from_i32(x2), <$t>::from_i32(y2), <$t>::from_i32(z2)];
+                        
+                        if i < 1000 {
+                            boxes_to_delete.push(b);
+                        }
+                        tree.insert(format!("box{}", i), b);
+                    }
+
+                    assert_eq!(tree.count(), 100_000);
+
+                    let search_area: KdBox<$t> = [<$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(50000), <$t>::from_i32(50000), <$t>::from_i32(50000)];
+                    let mut found_count = 0;
+                    for _ in tree.start(search_area) {
+                        found_count += 1;
+                    }
+                    assert!(found_count > 100);
+
+                    for i in 0..1000 {
+                        let item_name = format!("box{}", i);
+                        let deleted = tree.hard_delete(&item_name, &boxes_to_delete[i]);
+                        assert!(deleted, "Failed to hard delete box{}", i);
+                    }
+
+                    assert_eq!(tree.count(), 99_000);
+                }
             }
-        }
+        };
     }
+
+    generate_tests!(i32, tests_i32);
+    generate_tests!(i64, tests_i64);
+    generate_tests!(i128, tests_i128);
 }

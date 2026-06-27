@@ -10,16 +10,22 @@ all: libkdtree.so libkdtree.a
 2d/kd_64.o: 2d/kd.c 2d/kd.h
 	$(CC) $(CFLAGS) -DCOORD_64 -c 2d/kd.c -o $@
 
+2d/kd_128.o: 2d/kd.c 2d/kd.h
+	$(CC) $(CFLAGS) -DCOORD_128 -c 2d/kd.c -o $@
+
 3d/kd.o: 3d/kd.c 3d/kd.h
 	$(CC) $(CFLAGS) -c 3d/kd.c -o $@
 
 3d/kd_64.o: 3d/kd.c 3d/kd.h
 	$(CC) $(CFLAGS) -DCOORD_64 -c 3d/kd.c -o $@
 
-libkdtree.so: 2d/kd.o 2d/kd_64.o 3d/kd.o 3d/kd_64.o
+3d/kd_128.o: 3d/kd.c 3d/kd.h
+	$(CC) $(CFLAGS) -DCOORD_128 -c 3d/kd.c -o $@
+
+libkdtree.so: 2d/kd.o 2d/kd_64.o 2d/kd_128.o 3d/kd.o 3d/kd_64.o 3d/kd_128.o
 	$(CC) -shared -o $@ $^ $(LDFLAGS)
 
-libkdtree.a: 2d/kd.o 2d/kd_64.o 3d/kd.o 3d/kd_64.o
+libkdtree.a: 2d/kd.o 2d/kd_64.o 2d/kd_128.o 3d/kd.o 3d/kd_64.o 3d/kd_128.o
 	ar rcs $@ $^
 
 clean:

@@ -3,6 +3,48 @@
 
 #include <stdint.h>
 
+/* 2D 128-bit API */
+typedef __int128 kd_2d_128_box[4];
+typedef struct { double dist; kd_generic elem; } kd_priority_2d_128;
+
+extern kd_tree kd_2d_128_create(void);
+extern kd_tree kd_2d_128_build(int (*itemfunc)(kd_generic arg, kd_generic *val, kd_2d_128_box size), kd_generic );
+extern void kd_2d_128_destroy(kd_tree this_one, void (*delfunc)(kd_generic item));
+extern kd_status kd_2d_128_is_member(kd_tree , kd_generic , kd_2d_128_box );
+extern void kd_2d_128_insert(kd_tree , kd_generic , kd_2d_128_box, kd_generic );
+extern kd_status kd_2d_128_delete(kd_tree , kd_generic , kd_2d_128_box );
+extern kd_status kd_2d_128_really_delete(kd_tree theTree, kd_generic data, kd_2d_128_box old_size, int *num_tries, int *num_del);
+extern kd_gen kd_2d_128_start(kd_tree tree, kd_2d_128_box size);
+extern kd_status kd_2d_128_next(kd_gen , kd_generic *, kd_2d_128_box);
+extern int kd_2d_128_finish(kd_gen);
+extern int kd_2d_128_count(kd_tree tree);
+extern void kd_2d_128_print(kd_tree);
+extern void kd_2d_128_badness(kd_tree);
+extern kd_tree kd_2d_128_rebuild(kd_tree);
+extern int kd_2d_128_nearest(kd_tree tree, __int128 x, __int128 y, int m, kd_priority_2d_128 **alist);
+extern void kd_2d_128_print_nearest(kd_tree tree, __int128 x, __int128 y, int m);
+
+/* 3D 128-bit API */
+typedef __int128 kd_3d_128_box[6];
+typedef struct kd_priority_3d_128 { double dist; void *elem; } kd_priority_3d_128;
+
+extern kd_tree kd_3d_128_create(void);
+extern kd_tree kd_3d_128_build(int (*itemfunc)(kd_generic arg, kd_generic *val, kd_3d_128_box size), kd_generic );
+extern void kd_3d_128_destroy(kd_tree this_one, void (*delfunc)(kd_generic item));
+extern kd_status kd_3d_128_is_member(kd_tree , kd_generic , kd_3d_128_box );
+extern void kd_3d_128_insert(kd_tree , kd_generic , kd_3d_128_box, kd_generic );
+extern kd_status kd_3d_128_delete(kd_tree , kd_generic , kd_3d_128_box );
+extern kd_status kd_3d_128_really_delete(kd_tree theTree, kd_generic data, kd_3d_128_box old_size, int *num_tries, int *num_del);
+extern kd_gen kd_3d_128_start(kd_tree tree, kd_3d_128_box size);
+extern kd_status kd_3d_128_next(kd_gen , kd_generic *, kd_3d_128_box);
+extern int kd_3d_128_finish(kd_gen);
+extern int kd_3d_128_count(kd_tree tree);
+extern void kd_3d_128_print(kd_tree);
+extern void kd_3d_128_badness(kd_tree);
+extern kd_tree kd_3d_128_rebuild(kd_tree);
+extern int kd_3d_128_nearest(kd_tree tree, __int128 x, __int128 y, __int128 z, int m, kd_priority_3d_128 **alist);
+extern void kd_3d_128_print_nearest(kd_tree tree, __int128 x, __int128 y, __int128 z, int m);
+
 #ifdef __cplusplus
 extern "C" {
 #endif

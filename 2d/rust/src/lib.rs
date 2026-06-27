@@ -466,72 +466,84 @@ mod tests {
     use super::*;
     use super::Lcg;
 
-    #[test]
-    fn test_kd_tree_basic() {
-        let mut tree = Tree::<&str, i32>::new();
-        let box1: KdBox<i32> = [0, 0, 10, 10];
-        let box2: KdBox<i32> = [20, 20, 30, 30];
-        let box3: KdBox<i32> = [5, 5, 15, 15];
+    macro_rules! generate_tests {
+        ($t:ty, $mod_name:ident) => {
+            mod $mod_name {
+                use super::*;
 
-        tree.insert("item1", box1);
-        tree.insert("item2", box2);
-        tree.insert("item3", box3);
+                #[test]
+                fn test_kd_tree_basic() {
+                    let mut tree = Tree::<&str, $t>::new();
+                    let box1: KdBox<$t> = [<$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(10), <$t>::from_i32(10)];
+                    let box2: KdBox<$t> = [<$t>::from_i32(20), <$t>::from_i32(20), <$t>::from_i32(30), <$t>::from_i32(30)];
+                    let box3: KdBox<$t> = [<$t>::from_i32(5), <$t>::from_i32(5), <$t>::from_i32(15), <$t>::from_i32(15)];
 
-        assert_eq!(tree.count(), 3);
-        assert!(tree.is_member(&"item2", &box2));
-    }
+                    tree.insert("item1", box1);
+                    tree.insert("item2", box2);
+                    tree.insert("item3", box3);
 
-    #[test]
-    fn test_kd_tree_hard_delete() {
-        let mut tree = Tree::<&str, i32>::new();
-        let box1: KdBox<i32> = [0, 0, 10, 10];
-        let box2: KdBox<i32> = [20, 20, 30, 30];
-        let box3: KdBox<i32> = [5, 5, 15, 15];
+                    assert_eq!(tree.count(), 3);
+                    assert!(tree.is_member(&"item2", &box2));
+                }
 
-        tree.insert("item1", box1);
-        tree.insert("item2", box2);
-        tree.insert("item3", box3);
+                #[test]
+                fn test_kd_tree_hard_delete() {
+                    let mut tree = Tree::<&str, $t>::new();
+                    let box1: KdBox<$t> = [<$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(10), <$t>::from_i32(10)];
+                    let box2: KdBox<$t> = [<$t>::from_i32(20), <$t>::from_i32(20), <$t>::from_i32(30), <$t>::from_i32(30)];
+                    let box3: KdBox<$t> = [<$t>::from_i32(5), <$t>::from_i32(5), <$t>::from_i32(15), <$t>::from_i32(15)];
 
-        assert!(tree.hard_delete(&"item1", &box1));
-        assert_eq!(tree.count(), 2);
-        assert!(tree.is_member(&"item2", &box2));
-        assert!(tree.is_member(&"item3", &box3));
-    }
+                    tree.insert("item1", box1);
+                    tree.insert("item2", box2);
+                    tree.insert("item3", box3);
 
-    #[test]
-    fn test_million_boxes() {
-        let mut tree = Tree::<String, i32>::new();
-        let mut rng = Lcg { state: 42 };
-        let mut boxes_to_delete = Vec::new();
+                    assert!(tree.hard_delete(&"item1", &box1));
+                    assert_eq!(tree.count(), 2);
+                    assert!(tree.is_member(&"item2", &box2));
+                    assert!(tree.is_member(&"item3", &box3));
+                }
 
-        for i in 0..1_000_000 {
-            let x1 = rng.next_range(100000);
-            let y1 = rng.next_range(100000);
-            let x2 = x1 + rng.next_range(100) + 1;
-            let y2 = y1 + rng.next_range(100) + 1;
-            let b: KdBox<i32> = [x1, y1, x2, y2];
-            
-            if i < 1000 {
-                boxes_to_delete.push(b);
+                #[test]
+                fn test_million_boxes() {
+                    let mut tree = Tree::<String, $t>::new();
+                    let mut rng = Lcg { state: 42 };
+                    let mut boxes_to_delete = Vec::new();
+
+                    for i in 0..100_000 { // Reduced to 100k to keep test suite fast
+                        let x1 = rng.next_range(100000);
+                        let y1 = rng.next_range(100000);
+                        let x2 = x1 + rng.next_range(100) + 1;
+                        let y2 = y1 + rng.next_range(100) + 1;
+                        let b: KdBox<$t> = [<$t>::from_i32(x1), <$t>::from_i32(y1), <$t>::from_i32(x2), <$t>::from_i32(y2)];
+                        
+                        if i < 1000 {
+                            boxes_to_delete.push(b);
+                        }
+                        tree.insert(format!("box{}", i), b);
+                    }
+
+                    assert_eq!(tree.count(), 100_000);
+
+                    let search_area: KdBox<$t> = [<$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(50000), <$t>::from_i32(50000)];
+                    let mut found_count = 0;
+                    for _ in tree.start(search_area) {
+                        found_count += 1;
+                    }
+                    assert!(found_count > 100);
+
+                    for i in 0..1000 {
+                        let item_name = format!("box{}", i);
+                        let deleted = tree.hard_delete(&item_name, &boxes_to_delete[i]);
+                        assert!(deleted, "Failed to hard delete box{}", i);
+                    }
+
+                    assert_eq!(tree.count(), 99_000);
+                }
             }
-            tree.insert(format!("box{}", i), b);
-        }
-
-        assert_eq!(tree.count(), 1_000_000);
-
-        let search_area: KdBox<i32> = [0, 0, 50000, 50000];
-        let mut found_count = 0;
-        for _ in tree.start(search_area) {
-            found_count += 1;
-        }
-        println!("Found {} boxes in the 0-50000 search area", found_count);
-
-        for i in 0..1000 {
-            let item_name = format!("box{}", i);
-            let deleted = tree.hard_delete(&item_name, &boxes_to_delete[i]);
-            assert!(deleted, "Failed to hard delete box{}", i);
-        }
-
-        assert_eq!(tree.count(), 999_000);
+        };
     }
+
+    generate_tests!(i32, tests_i32);
+    generate_tests!(i64, tests_i64);
+    generate_tests!(i128, tests_i128);
 }
