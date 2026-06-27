@@ -35,3 +35,6 @@ install: libkdtree.so libkdtree.a
 	install -D -m 755 libkdtree.so $(DESTDIR)/usr/lib64/libkdtree.so
 	install -D -m 644 libkdtree.a $(DESTDIR)/usr/lib64/libkdtree.a
 	install -D -m 644 include/kdtree.h $(DESTDIR)/usr/include/kdtree/kdtree.h
+
+test:
+	echo Done.
