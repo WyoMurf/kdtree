@@ -5,7 +5,7 @@ on:
       subdir::
         description: 'Subdirectory of the package (e.g. 2d/julia or 3d/julia)'
         required: true
-	type: choice
+        type: choice
         options:
           - 2d/julia
           - 3d/julia
