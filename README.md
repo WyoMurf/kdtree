@@ -34,3 +34,18 @@ Whether you compile via Make flags (C), invoke Generic parameters (Rust/Go), or 
 ## License
 
 This software is released under the **LGPL v2.0** License. See the `LICENSE` file for details.
+
+For Go users,
+
+To get the 2D package:
+go get github.com/WyoMurf/kdtree/2d/go@v1.0.0
+
+To get the 3D package:
+go get github.com/WyoMurf/kdtree/3d/go@v1.0.0
+
+
+Julia:
+
+Developers can open the Julia REPL and type ] add KDTree and ] add KDTree3D.
+
+

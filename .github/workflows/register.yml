@@ -1,0 +1,27 @@
+name: Register Package
+on:
+  workflow_dispatch:
+    inputs:
+      subdir::
+        description: 'Subdirectory of the package (e.g. 2d/julia or 3d/julia)'
+        required: true
+	type: choice
+        options:
+          - 2d/julia
+          - 3d/julia
+
+jobs:
+  register:
+    runs-on: AlmaLinux-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - name: Register Package
+        uses: julia-actions/RegisterAction@v1
+        with:
+          subdir: ${{ github.event.inputs.subdir }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # USER_TOKEN: ${{ secrets.PAT }} was... token: ${{ secrets.GITHUB_TOKEN }}
