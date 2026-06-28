@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
-	"github.com/WyoMurf/kdtree/3d/coord32/go"
+	"github.com/WyoMurf/kdtree/3d/go"
 )
 
 func main() {

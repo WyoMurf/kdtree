@@ -1,3 +1,5 @@
+.PHONY: all clean install test
+
 CC = gcc
 CFLAGS = -std=c11 -O3 -Wall -Wno-unused -fPIC
 LDFLAGS = -lm
