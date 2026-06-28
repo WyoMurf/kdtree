@@ -4,6 +4,8 @@ A highly-optimized, memory-safe, and multi-language K-Dimensional Tree (KD-Tree)
 
 This repository contains completely unified 2D and 3D implementations across **C, Go, Julia, and Rust**. Each implementation natively supports `32-bit`, `64-bit`, and `128-bit` coordinate precision, dynamically adapting to your data's requirements.
 
+At the core, it stores objects based on their 2-d (x,y) and 3d- (x,y,z) bounding-box coordinates (which can be expressed as 32-bit, 64-bit, or 128-bit integer numbers). These can searched using another bounding box, new objects can be entered, objects can be deleted, the tree can be rebuilt if it would benefit search times, a "badness" of the tree can be determined, and nearest neighbors can be determined.
+
 ## Implementations
 
 Choose the language environment that best fits your stack. Each implementation resides in its own directory with specific instructions for compilation, usage, and testing.
@@ -27,7 +29,7 @@ All language implementations adhere to the same underlying high-performance algo
 
 ## Precision & Bit-Widths
 
-Unlike standard algorithms that force you to choose between memory efficiency (32-bit) and overflow safety (64-bit) at the project level, this library parameterizes coordinate widths. 
+Unlike standard algorithms that force you to choose between memory efficiency (32-bit) and overflow safety (64-bit) at the project level, this library parameterizes coordinate widths. All languages but Go can support 128-bit integer coordinates. When Go is upgraded to support 128-bit integers natively, we will upgrade that implementation. 
 
 Whether you compile via Make flags (C), invoke Generic parameters (Rust/Go), or utilize dynamic dispatch (Julia), the KD-Tree will natively process your exact bit-width without requiring separate library distributions or suffering from type-casting overheads.
 
