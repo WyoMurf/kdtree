@@ -2,8 +2,12 @@ name: Register Package
 on:
   workflow_dispatch:
     inputs:
-      subdir::
-        description: 'Subdirectory of the package (e.g. 2d/julia or 3d/julia)'
+      version:
+        description: 'Version to register (e.g. 1.0.0, major, minor, patch)'
+        required: true
+        default: '1.0.0'
+      subdir:
+        description: 'Subdirectory of the package'
         required: true
         type: choice
         options:
@@ -21,7 +25,4 @@ jobs:
       - name: Register Package
         uses: julia-actions/RegisterAction@v0.3.2
         with:
-          subdir: ${{ github.event.inputs.subdir }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # USER_TOKEN: ${{ secrets.PAT }} was... token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
