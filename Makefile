@@ -9,7 +9,7 @@ all:
 	cd 3d/rust && cargo build
 	$(MAKE) -C 3d/julia
 
-test: 
+test: all
 	$(MAKE) -C C test
 	cd 2d/go && go test -v ./...
 	cd 2d/rust && cargo test
