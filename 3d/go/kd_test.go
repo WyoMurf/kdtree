@@ -3,6 +3,7 @@ package kd
 import (
 	"math"
 	"math/rand"
+	"os"
 	"sort"
 	"testing"
 )
@@ -254,4 +255,36 @@ func TestBadness(t *testing.T) {
 	}
 
 	tree.Badness() // Should run and print balance stats without errors
+}
+
+func TestSerialize(t *testing.T) {
+	tree := Create[int32]()
+
+	tree.Insert("item1", Box[int32]{10, 10, 10, 10, 10, 10})
+	tree.Insert("item2", Box[int32]{20, 20, 20, 20, 20, 20})
+	tree.Insert("item3", Box[int32]{5, 5, 5, 5, 5, 5})
+
+	err := tree.Serialize("test_serialize.kdtree", func(item interface{}) uint64 {
+		switch item.(string) {
+		case "item1": return 1
+		case "item2": return 2
+		case "item3": return 3
+		}
+		return 0
+	})
+	if err != nil {
+		t.Fatalf("Serialize failed: %v", err)
+	}
+
+	info, err := os.Stat("test_serialize.kdtree")
+	if err != nil {
+		t.Fatalf("Stat failed: %v", err)
+	}
+
+	expectedSize := int64(3 * 60)
+	if info.Size() != expectedSize {
+		t.Fatalf("Expected size %d, got %d", expectedSize, info.Size())
+	}
+
+	os.Remove("test_serialize.kdtree")
 }

@@ -1,8 +1,10 @@
 package kd
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
+	"os"
 )
 
 type Coord interface {
@@ -938,4 +940,79 @@ func (t *Tree[T]) Badness() {
 
 	fmt.Printf("balance ratio=%g (the closer to 1.0, the better), #of nodes with only one branch=%d (%g), max depth=%d, dead=%d (%g)\n",
 		ratio, factor3, factor3Pct, maxLevels, t.DeadCount, deadPct)
+}
+
+type MmapNode[T Coord] struct {
+	SourceID   uint64
+	Size       Box[T]
+	LoMinBound T
+	HiMaxBound T
+	OtherBound T
+	LeftChild  int64
+	RightChild int64
+}
+
+func writeT[T Coord](file *os.File, val T) {
+	switch v := any(val).(type) {
+	case int32:
+		binary.Write(file, binary.LittleEndian, v)
+	case int64:
+		binary.Write(file, binary.LittleEndian, v)
+	case int:
+		binary.Write(file, binary.LittleEndian, int64(v))
+	}
+}
+
+func (t *Tree[T]) Serialize(filename string, itemToID func(interface{}) uint64) error {
+	count := t.ItemCount - t.DeadCount
+	if count <= 0 {
+		return fmt.Errorf("Empty tree")
+	}
+
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	vec := make([]MmapNode[T], 0, count)
+
+	var serializeNodeRecursive func(node *Node[T]) int64
+	serializeNodeRecursive = func(node *Node[T]) int64 {
+		if node != nil && node.Item != nil {
+			myIdx := int64(len(vec))
+			vec = append(vec, MmapNode[T]{})
+			
+			left := serializeNodeRecursive(node.Sons[0])
+			right := serializeNodeRecursive(node.Sons[1])
+			
+			vec[myIdx] = MmapNode[T]{
+				SourceID:   itemToID(node.Item),
+				Size:       node.Size,
+				LoMinBound: node.LoMinBound,
+				HiMaxBound: node.HiMaxBound,
+				OtherBound: node.OtherBound,
+				LeftChild:  left,
+				RightChild: right,
+			}
+			return myIdx
+		}
+		return -1
+	}
+
+	serializeNodeRecursive(t.Root)
+
+	for i := range vec {
+		binary.Write(file, binary.LittleEndian, vec[i].SourceID)
+		for j := 0; j < len(vec[i].Size); j++ {
+			writeT(file, vec[i].Size[j])
+		}
+		writeT(file, vec[i].LoMinBound)
+		writeT(file, vec[i].HiMaxBound)
+		writeT(file, vec[i].OtherBound)
+		binary.Write(file, binary.LittleEndian, vec[i].LeftChild)
+		binary.Write(file, binary.LittleEndian, vec[i].RightChild)
+	}
+
+	return nil
 }

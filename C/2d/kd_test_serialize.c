@@ -1,0 +1,100 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <assert.h>
+#include "kd.h"
+
+extern int kd_serialize(kd_tree tree, const char *filename);
+#pragma pack(push, 1)
+typedef struct kd_mmap_node {
+    uint64_t source_id;
+    coord_t size[4];
+    coord_t lo_min_bound;
+    coord_t hi_max_bound;
+    coord_t other_bound;
+    int64_t left_child;
+    int64_t right_child;
+} kd_mmap_node;
+#pragma pack(pop)
+
+
+// We define a simple item that matches our ID
+typedef struct {
+    int id;
+    coord_t x, y;
+} StarCoord;
+
+int item_func(kd_generic arg, kd_generic *val, kd_box size) {
+    StarCoord **stars = (StarCoord **)arg;
+    StarCoord *star = *stars;
+    
+    if (star->id == 0) { // sentinel
+        return 0;
+    }
+    
+    *val = (kd_generic)(intptr_t)star->id; // Using item as ID
+    size[KD_LEFT] = star->x;
+    size[KD_BOTTOM] = star->y;
+    size[KD_RIGHT] = star->x;
+    size[KD_TOP] = star->y;
+    
+    (*stars)++;
+    return KD_OK;
+}
+
+int main() {
+    StarCoord stars[] = {
+        {1, 10, 10},
+        {2, 20, 20},
+        {3, 5, 5},
+        {0, 0, 0} // sentinel
+    };
+    
+    StarCoord *ptr = stars;
+    printf("Calling kd_build...\n");
+    kd_tree tree = kd_build(item_func, (kd_generic)&ptr);
+    printf("kd_build finished.\n");
+    assert(tree != NULL);
+    
+    int count = kd_count(tree);
+    printf("kd_count finished: %d\n", count);
+    assert(count == 3);
+    
+    const char *filename = "test_serialize.kdtree";
+    printf("Calling kd_serialize...\n");
+    int ret = kd_serialize(tree, filename);
+    printf("kd_serialize finished.\n");
+    assert(ret == 0);
+    
+    kd_destroy(tree, NULL);
+    
+    // Now verify the file
+    int fd = open(filename, O_RDONLY);
+    assert(fd != -1);
+    
+    struct stat sb;
+    fstat(fd, &sb);
+    assert(sb.st_size == 3 * sizeof(kd_mmap_node));
+    
+    kd_mmap_node *array = mmap(NULL, sb.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    assert(array != MAP_FAILED);
+    
+    // The root should be item 1, 2, or 3. Let's just check the IDs are all there.
+    int found[4] = {0};
+    for(int i=0; i<3; i++) {
+        uint64_t id = array[i].source_id;
+        assert(id >= 1 && id <= 3);
+        found[id] = 1;
+    }
+    assert(found[1] == 1 && found[2] == 1 && found[3] == 1);
+    
+    munmap(array, sb.st_size);
+    close(fd);
+    unlink(filename);
+    
+    printf("Serialize test passed.\n");
+    return 0;
+}

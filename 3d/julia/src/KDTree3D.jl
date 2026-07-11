@@ -1,6 +1,6 @@
 module KDTree3D
 
-export Tree, Box, insert!, delete!, count_items, is_member, hard_delete!, search, nearest, 
+export serialize, Tree, Box, insert!, delete!, count_items, is_member, hard_delete!, search, nearest, 
        LEFT, BOTTOM, FLOOR, RIGHT, TOP, CEIL, build_tree, rebuild!, badness
 
 const Box{C<:Integer} = NTuple{6, C}
@@ -951,6 +951,47 @@ function really_delete!(tree::Tree{T, C}, item::T, old_size::Box{C}) where {T, C
 
     tree.item_count -= 1
     return (1, stats.num_tries, stats.num_del)
+end
+
+
+function serialize(tree::Tree{T, C}, filename::String, item_to_id::Function) where {T, C<:Integer}
+    count = tree.item_count - tree.dead_count
+    if count <= 0
+        error("Empty tree")
+    end
+
+    node_size = 8 + 6*sizeof(C) + 3*sizeof(C) + 16
+
+    io = open(filename, "w+")
+    truncate(io, count * node_size)
+
+    current_idx = 0
+    function serialize_node(node::Union{Node{T, C}, Nothing})
+        if node === nothing || node.item === nothing
+            return Int64(-1)
+        end
+        my_idx = current_idx
+        current_idx += 1
+
+        left = serialize_node(node.sons[1])
+        right = serialize_node(node.sons[2])
+
+        seek(io, my_idx * node_size)
+        write(io, UInt64(item_to_id(node.item)))
+        for i in 1:6
+            write(io, node.size[i])
+        end
+        write(io, node.lo_min_bound)
+        write(io, node.hi_max_bound)
+        write(io, node.other_bound)
+        write(io, Int64(left))
+        write(io, Int64(right))
+
+        return Int64(my_idx)
+    end
+
+    serialize_node(tree.root)
+    close(io)
 end
 
 end

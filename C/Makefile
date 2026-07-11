@@ -1,7 +1,7 @@
 .PHONY: all clean install test
 
 CC = gcc
-CFLAGS = -std=c11 -O3 -Wall -Wno-unused -fPIC
+CFLAGS = -std=c11 -g -Wall -Wno-unused -fPIC
 LDFLAGS = -lm
 
 all: libkdtree.so libkdtree.a
@@ -38,7 +38,7 @@ install: libkdtree.so libkdtree.a
 	install -D -m 644 libkdtree.a $(DESTDIR)/usr/lib64/libkdtree.a
 	install -D -m 644 include/kdtree.h $(DESTDIR)/usr/include/kdtree/kdtree.h
 
-TEST_TYPES = soft hard nearest
+TEST_TYPES = soft hard nearest serialize
 TESTS_2D = $(patsubst %, 2d/test_%, $(TEST_TYPES))
 TESTS_3D = $(patsubst %, 3d/test_%, $(TEST_TYPES))
 TESTS_2D_64 = $(patsubst %, 2d/test_%_64, $(TEST_TYPES))

@@ -1,6 +1,6 @@
 using Test
 using KDTree
-import KDTree: insert!, search, nearest, count_items, is_member, hard_delete!, really_delete!, badness
+import KDTree: serialize, insert!, search, nearest, count_items, is_member, hard_delete!, really_delete!, badness
 using Random
 
 for CType in (Int32, Int64, Int128)
@@ -131,6 +131,21 @@ for CType in (Int32, Int64, Int128)
             @test count_items(tree) == 0
             
             @test length(search(tree, (CType(-100001), CType(-100001), CType(100001), CType(100001)))) == 0
+        
+        @testset "Serialize ($CType)" begin
+            tree = Tree{String, CType}()
+            insert!(tree, "item1", (CType(10), CType(10), CType(10), CType(10)))
+            insert!(tree, "item2", (CType(20), CType(20), CType(20), CType(20)))
+            insert!(tree, "item3", (CType(5), CType(5), CType(5), CType(5)))
+
+            filename = "test_serialize_$(CType).kdtree"
+            serialize(tree, filename, x -> parse(UInt64, replace(x, "item" => "")))
+            
+            node_size = 8 + 4*sizeof(CType) + 3*sizeof(CType) + 16
+            @test filesize(filename) == 3 * node_size
+            
+            rm(filename)
         end
+end
     end
 end

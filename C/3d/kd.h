@@ -75,6 +75,8 @@ typedef int32_t coord_t;
 #define kd_print          kd_3d_128_print
 #define kd_badness        kd_3d_128_badness
 #define kd_rebuild        kd_3d_128_rebuild
+#define kd_serialize      kd_3d_128_serialize
+#define kd_mmap_node      kd_3d_128_mmap_node
 #define kd_nearest        kd_3d_128_nearest
 #define kd_print_nearest  kd_3d_128_print_nearest
 #define collect_nodes     kd_3d_128_collect_nodes
@@ -101,6 +103,8 @@ typedef int32_t coord_t;
 #define kd_print          kd_3d_64_print
 #define kd_badness        kd_3d_64_badness
 #define kd_rebuild        kd_3d_64_rebuild
+#define kd_serialize      kd_3d_64_serialize
+#define kd_mmap_node      kd_3d_64_mmap_node
 #define kd_nearest        kd_3d_64_nearest
 #define kd_print_nearest  kd_3d_64_print_nearest
 #define collect_nodes     kd_3d_64_collect_nodes
@@ -127,6 +131,8 @@ typedef int32_t coord_t;
 #define kd_print          kd_3d_32_print
 #define kd_badness        kd_3d_32_badness
 #define kd_rebuild        kd_3d_32_rebuild
+#define kd_serialize      kd_3d_32_serialize
+#define kd_mmap_node      kd_3d_32_mmap_node
 #define kd_nearest        kd_3d_32_nearest
 #define kd_print_nearest  kd_3d_32_print_nearest
 #define collect_nodes     kd_3d_32_collect_nodes

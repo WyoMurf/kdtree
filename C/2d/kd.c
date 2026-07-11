@@ -2327,3 +2327,64 @@ int kd_nearest(kd_tree tree, coord_t x, coord_t y, int m, kd_priority **alist)
 	}
 	return kd_neighbor(realTree->tree,Xq,m,*list,Bp,Bn);
 }
+
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/mman.h>
+
+#pragma pack(push, 1)
+typedef struct kd_mmap_node {
+    uint64_t source_id;
+    coord_t size[4];
+    coord_t lo_min_bound;
+    coord_t hi_max_bound;
+    coord_t other_bound;
+    int64_t left_child;
+    int64_t right_child;
+} kd_mmap_node;
+#pragma pack(pop)
+
+extern int ftruncate(int fd, off_t length);
+
+static int64_t kd_serialize_node(KDElem *node, kd_mmap_node *array, int64_t *current_idx) {
+    if (!node || node->item == NULL) return -1;
+    
+    int64_t my_idx = *current_idx;
+    (*current_idx)++;
+    
+    kd_mmap_node *mmap_node = &array[my_idx];
+    mmap_node->source_id = (uint64_t)(uintptr_t)node->item;
+    for(int i=0; i<4; i++) mmap_node->size[i] = node->size[i];
+    mmap_node->lo_min_bound = node->lo_min_bound;
+    mmap_node->hi_max_bound = node->hi_max_bound;
+    mmap_node->other_bound = node->other_bound;
+    
+    mmap_node->left_child = kd_serialize_node(node->sons[0], array, current_idx);
+    mmap_node->right_child = kd_serialize_node(node->sons[1], array, current_idx);
+    
+    return my_idx;
+}
+
+int kd_serialize(kd_tree tree, const char *filename) {
+    if (!tree) return -1;
+    KDTree *realTree = (KDTree *)tree;
+    int64_t count = realTree->item_count - realTree->dead_count;
+    if (count <= 0) return -1;
+    
+    int fd = open(filename, O_RDWR | O_CREAT | O_TRUNC, 0666);
+    if (fd == -1) return -1;
+    
+    size_t file_size = count * sizeof(kd_mmap_node);
+    if (ftruncate(fd, file_size) == -1) { close(fd); return -1; }
+    
+    kd_mmap_node *array = mmap(NULL, file_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (array == MAP_FAILED) { close(fd); return -1; }
+    
+    int64_t current_idx = 0;
+    kd_serialize_node(realTree->tree, array, &current_idx);
+    
+    msync(array, file_size, MS_SYNC);
+    munmap(array, file_size);
+    close(fd);
+    return 0;
+}
