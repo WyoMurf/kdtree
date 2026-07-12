@@ -342,7 +342,7 @@ static kd_list *kd_tmp_ptr;
 /* Forward declarations */
 static kd_list *load_items(int (*itemfunc)(kd_generic arg, kd_generic *val, kd_box size), kd_generic arg, kd_box extent, int *length, double *mean);
 static KDElem *build_node(kd_list *items, int num, kd_box extent, int disc, int level, int max_level, kd_list **spares, int *treecount, double mean);
-static void sel_k(kd_list *items, int k, int disc, kd_list **lo, kd_list **eq, kd_list **hi, double *lomean, double *himean, long *locount, long *hicount);
+static void sel_k(kd_list *items, coord_t k, int disc, kd_list **lo, kd_list **eq, kd_list **hi, double *lomean, double *himean, long *locount, long *hicount);
 static void resolve(kd_list **lo, kd_list **eq, kd_list **hi, int disc, double *lomean, double *himean, long *locount, long *hicount);
 static int get_min_max(kd_list *list, int disc, coord_t *b_min, coord_t *b_max);
 static void del_elem(KDElem *elem, void (*delfunc)(kd_generic item));
@@ -385,6 +385,7 @@ kd_tree kd_build(int (*itemfunc)(kd_generic arg, kd_generic *val, kd_box size), 
 	double mean;
     /* First build up list of items and their overall extent */
     items = load_items(itemfunc, arg, extent, &item_count, &mean);
+    if (item_count > 0) mean /= item_count;
     if (!items)
 	{
 		(void) kd_fault(KDF_ZEROID);
@@ -535,11 +536,13 @@ static KDElem *build_node(kd_list *items, int num, kd_box extent, int disc, int 
     KDElem *lo, *eq, *hi;
     coord_t lo_min_bound, lo_max_bound, hi_min_bound, hi_max_bound;
     int num_lo, num_hi;
-    int hort, tmp, m;
+    int hort;
+    coord_t tmp, m;
 	double lomean, himean;
 	long locnt,hicnt;
 	
     if (num == 0) return (KDElem *) 0;
+
 
     /* Find (disc)-median of items */
     hort = disc % 3;
@@ -651,7 +654,7 @@ kd_list **hi;			/* Returned items larger than `k'th */
 }
 #endif
 
-static void sel_k(kd_list *items, int k, int disc, kd_list **lo, kd_list **eq, kd_list **hi, double *lomean, double *himean, long *locount, long *hicount)
+static void sel_k(kd_list *items, coord_t k, int disc, kd_list **lo, kd_list **eq, kd_list **hi, double *lomean, double *himean, long *locount, long *hicount)
 // kd_list *items;			/* Items to examine                 */
 // int k;				/* Look for item close to `k'       */
 // int disc;			/* Discriminator                    */

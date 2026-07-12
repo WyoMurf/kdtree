@@ -341,9 +341,9 @@ static kd_list *kd_tmp_ptr;
 /* Forward declarations */
 static kd_list *load_items(int (*itemfunc)(kd_generic arg, kd_generic *val, kd_box size), kd_generic arg, kd_box extent, int *length, double *mean);
 static KDElem *build_node(kd_list *items, int num, kd_box extent, int disc, int level, int max_level, kd_list **spares, int *treecount, double mean);
-static void sel_k(kd_list *items, int k, int disc, kd_list **lo, kd_list **eq, kd_list **hi, double *lomean, double *himean, long *locount, long *hicount);
+static void sel_k(kd_list *items, coord_t k, int disc, kd_list **lo, kd_list **eq, kd_list **hi, double *lomean, double *himean, long *locount, long *hicount);
 static void resolve(kd_list **lo, kd_list **eq, kd_list **hi, int disc, double *lomean, double *himean, long *locount, long *hicount);
-static int get_min_max(kd_list *list, int disc, int *b_min, int *b_max);
+static int get_min_max(kd_list *list, int disc, coord_t *b_min, coord_t *b_max);
 static void del_elem(KDElem *elem, void (*delfunc)(kd_generic item));
 static kd_status del_element(KDTree *tree, KDElem *elem, int spot);
 static KDElem *find_item(KDElem *elem, int disc, kd_generic item, kd_box size, int search_p, KDElem *items_elem);
@@ -384,6 +384,7 @@ kd_tree kd_build(int (*itemfunc)(kd_generic arg, kd_generic *val, kd_box size), 
 	double mean;
     /* First build up list of items and their overall extent */
     items = load_items(itemfunc, arg, extent, &item_count, &mean);
+    if (item_count > 0) mean /= item_count;
     if (!items)
 	{
 		(void) kd_fault(KDF_ZEROID);
@@ -526,9 +527,10 @@ static KDElem *build_node(kd_list *items, int num, kd_box extent, int disc, int 
 {
     KDElem *loson, *hison;
     KDElem *lo, *eq, *hi;
-    int lo_min_bound, lo_max_bound, hi_min_bound, hi_max_bound;
+    coord_t lo_min_bound, lo_max_bound, hi_min_bound, hi_max_bound;
     int num_lo, num_hi;
-    int hort, tmp, m;
+    int hort;
+    coord_t tmp, m;
 	double lomean, himean;
 	long locnt,hicnt;
 	
@@ -644,7 +646,7 @@ kd_list **hi;			/* Returned items larger than `k'th */
 }
 #endif
 
-static void sel_k(kd_list *items, int k, int disc, kd_list **lo, kd_list **eq, kd_list **hi, double *lomean, double *himean, long *locount, long *hicount)
+static void sel_k(kd_list *items, coord_t k, int disc, kd_list **lo, kd_list **eq, kd_list **hi, double *lomean, double *himean, long *locount, long *hicount)
 // kd_list *items;			/* Items to examine                 */
 // int k;				/* Look for item close to `k'       */
 // int disc;			/* Discriminator                    */
@@ -782,7 +784,7 @@ static void resolve(register kd_list **lo, register kd_list **eq, register kd_li
 
 
 
-static int get_min_max(kd_list *list, int disc, int *b_min, int *b_max)
+static int get_min_max(kd_list *list, int disc, coord_t *b_min, coord_t *b_max)
 // kd_list *list;			/* List to examine */
 // int disc;			/* Discriminator   */
 // int *b_min;			/* Lower bound     */

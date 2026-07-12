@@ -6,6 +6,7 @@ pub trait Coord: Copy + Ord + std::ops::Sub<Output = Self> + std::ops::Add<Outpu
     fn min_value() -> Self;
     fn max_value() -> Self;
     fn to_f64(self) -> f64;
+    fn write_to<W: std::io::Write>(self, writer: &mut W) -> std::io::Result<()>;
 }
 
 impl Coord for i32 {
@@ -17,6 +18,10 @@ impl Coord for i32 {
     fn max_value() -> Self { i32::MAX }
     #[inline]
     fn to_f64(self) -> f64 { self as f64 }
+    #[inline]
+    fn write_to<W: std::io::Write>(self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(&self.to_le_bytes())
+    }
 }
 
 impl Coord for i64 {
@@ -28,6 +33,10 @@ impl Coord for i64 {
     fn max_value() -> Self { i64::MAX }
     #[inline]
     fn to_f64(self) -> f64 { self as f64 }
+    #[inline]
+    fn write_to<W: std::io::Write>(self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(&self.to_le_bytes())
+    }
 }
 
 impl Coord for i128 {
@@ -39,6 +48,10 @@ impl Coord for i128 {
     fn max_value() -> Self { i128::MAX }
     #[inline]
     fn to_f64(self) -> f64 { self as f64 }
+    #[inline]
+    fn write_to<W: std::io::Write>(self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(&self.to_le_bytes())
+    }
 }
 
 // Box defines a 3D bounding box [left, bottom, floor, right, top, ceil]
@@ -826,6 +839,95 @@ impl<T: PartialEq + Clone, C: Coord> Tree<T, C> {
     }
 }
 
+impl<T: PartialEq + Clone, C: Coord> Tree<T, C> {
+    pub fn serialize<F>(&self, filename: &str, mut item_to_id: F) -> std::io::Result<()>
+    where
+        F: FnMut(&T) -> u64,
+    {
+        use std::fs::File;
+        use std::io::{BufWriter, Write};
+
+        let active_count = self.item_count - self.dead_count;
+        if active_count <= 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Empty tree",
+            ));
+        }
+
+        struct MmapNode<C> {
+            source_id: u64,
+            size: KdBox<C>,
+            lo_min_bound: C,
+            hi_max_bound: C,
+            other_bound: C,
+            left_child: i64,
+            right_child: i64,
+        }
+
+        let mut vec: Vec<MmapNode<C>> = Vec::with_capacity(active_count as usize);
+
+        fn serialize_node_recursive<T, C: Coord, F>(
+            node_idx_opt: Option<usize>,
+            arena: &Vec<Node<T, C>>,
+            vec: &mut Vec<MmapNode<C>>,
+            item_to_id: &mut F,
+        ) -> i64
+        where
+            F: FnMut(&T) -> u64,
+        {
+            if let Some(node_idx) = node_idx_opt {
+                let node = &arena[node_idx];
+                if let Some(ref item) = node.item {
+                    let my_idx = vec.len() as i64;
+                    
+                    // Push a placeholder node
+                    vec.push(MmapNode {
+                        source_id: 0,
+                        size: node.size,
+                        lo_min_bound: node.lo_min_bound,
+                        hi_max_bound: node.hi_max_bound,
+                        other_bound: node.other_bound,
+                        left_child: -1,
+                        right_child: -1,
+                    });
+
+                    // Recurse left and right
+                    let left = serialize_node_recursive(node.sons[0], arena, vec, item_to_id);
+                    let right = serialize_node_recursive(node.sons[1], arena, vec, item_to_id);
+
+                    // Update values with actual values
+                    vec[my_idx as usize].source_id = item_to_id(item);
+                    vec[my_idx as usize].left_child = left;
+                    vec[my_idx as usize].right_child = right;
+
+                    return my_idx;
+                }
+            }
+            -1
+        }
+
+        serialize_node_recursive(self.root, &self.arena, &mut vec, &mut item_to_id);
+
+        let file = File::create(filename)?;
+        let mut writer = BufWriter::new(file);
+
+        for node in vec {
+            writer.write_all(&node.source_id.to_le_bytes())?;
+            for val in node.size {
+                val.write_to(&mut writer)?;
+            }
+            node.lo_min_bound.write_to(&mut writer)?;
+            node.hi_max_bound.write_to(&mut writer)?;
+            node.other_bound.write_to(&mut writer)?;
+            writer.write_all(&node.left_child.to_le_bytes())?;
+            writer.write_all(&node.right_child.to_le_bytes())?;
+        }
+
+        Ok(())
+    }
+}
+
 pub fn intersect<C: Coord>(b1: &KdBox<C>, b2: &KdBox<C>) -> bool {
     b1[RIGHT] >= b2[LEFT] &&
     b2[RIGHT] >= b1[LEFT] &&
@@ -1021,6 +1123,30 @@ mod tests {
                     }
 
                     assert_eq!(tree.count(), 99_000);
+                }
+
+                #[test]
+                fn test_serialize() {
+                    let mut tree = Tree::<String, $t>::new();
+                    let b1 = [<$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(10), <$t>::from_i32(10), <$t>::from_i32(10)];
+                    let b2 = [<$t>::from_i32(20), <$t>::from_i32(20), <$t>::from_i32(20), <$t>::from_i32(30), <$t>::from_i32(30), <$t>::from_i32(30)];
+                    let b3 = [<$t>::from_i32(5), <$t>::from_i32(5), <$t>::from_i32(5), <$t>::from_i32(15), <$t>::from_i32(15), <$t>::from_i32(15)];
+
+                    tree.insert("item1".to_string(), b1);
+                    tree.insert("item2".to_string(), b2);
+                    tree.insert("item3".to_string(), b3);
+
+                    let filename = format!("test_serialize_{}.kdtree", stringify!($mod_name));
+                    let err = tree.serialize(&filename, |item| {
+                        item.replace("item", "").parse::<u64>().unwrap()
+                    });
+                    assert!(err.is_ok());
+
+                    let metadata = std::fs::metadata(&filename).unwrap();
+                    let expected_size = 3 * (8 + 9 * std::mem::size_of::<$t>() + 16);
+                    assert_eq!(metadata.len(), expected_size as u64);
+
+                    let _ = std::fs::remove_file(&filename);
                 }
             }
         };

@@ -85,6 +85,8 @@ typedef int32_t coord_t;
 #define kd_set_build_depth kd_2d_128_set_build_depth
 #define NEW_PATH          kd_2d_128_NEW_PATH
 #define unload_items      kd_2d_128_unload_items
+#define kd_serialize      kd_2d_128_serialize
+#define kd_mmap_node      kd_2d_128_mmap_node
 #define kd_pkg_name       kd_2d_128_pkg_name
 #elif defined(COORD_64)
 #define kd_create         kd_2d_64_create
@@ -111,6 +113,8 @@ typedef int32_t coord_t;
 #define kd_set_build_depth kd_2d_64_set_build_depth
 #define NEW_PATH          kd_2d_64_NEW_PATH
 #define unload_items      kd_2d_64_unload_items
+#define kd_serialize      kd_2d_64_serialize
+#define kd_mmap_node      kd_2d_64_mmap_node
 #define kd_pkg_name       kd_2d_64_pkg_name
 #else
 #define kd_create         kd_2d_32_create
@@ -137,6 +141,8 @@ typedef int32_t coord_t;
 #define kd_set_build_depth kd_2d_32_set_build_depth
 #define NEW_PATH          kd_2d_32_NEW_PATH
 #define unload_items      kd_2d_32_unload_items
+#define kd_serialize      kd_2d_32_serialize
+#define kd_mmap_node      kd_2d_32_mmap_node
 #define kd_pkg_name       kd_2d_32_pkg_name
 #endif
 

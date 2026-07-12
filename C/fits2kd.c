@@ -22,6 +22,8 @@ int item_func(kd_generic arg, kd_generic *val, kd_3d_64_box size) {
         return 0;
     }
     
+
+    
     *val = (kd_generic)(intptr_t)star->source_id; // Using item as ID
     size[0] = star->x;
     size[1] = star->y;
