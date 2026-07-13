@@ -139,9 +139,11 @@ int main(int argc, char **argv) {
         // Read active stars (source_id != 0)
         for (size_t n = 0; n < node_count; n++) {
             if (nodes[n].source_id != 0) {
-                float fx = (float)nodes[n].size[0] / 1000000000.0f;
-                float fy = (float)nodes[n].size[1] / 1000000000.0f;
-                float fz = (float)nodes[n].size[2] / 1000000000.0f;
+                // Extract exact mathematical center from 3D bounding box [min, max]
+                // Compatible with both old (min == max) and new (min = x - R, max = x + R) kdtree files.
+                float fx = (float)(nodes[n].size[0] + nodes[n].size[3]) / 2000000000.0f;
+                float fy = (float)(nodes[n].size[1] + nodes[n].size[4]) / 2000000000.0f;
+                float fz = (float)(nodes[n].size[2] + nodes[n].size[5]) / 2000000000.0f;
                 
                 positions[star_count * 3 + 0] = fx;
                 positions[star_count * 3 + 1] = fy;

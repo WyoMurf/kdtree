@@ -12,6 +12,7 @@
 typedef struct {
     int64_t source_id;
     int64_t x, y, z;
+    int64_t radius; // Physical stellar radius in scaled coordinate space (1 Rsun = 22.56 units)
 } StarCoord;
 
 int item_func(kd_generic arg, kd_generic *val, kd_3d_64_box size) {
@@ -22,15 +23,15 @@ int item_func(kd_generic arg, kd_generic *val, kd_3d_64_box size) {
         return 0;
     }
     
-
-    
     *val = (kd_generic)(intptr_t)star->source_id; // Using item as ID
-    size[0] = star->x;
-    size[1] = star->y;
-    size[2] = star->z;
-    size[3] = star->x;
-    size[4] = star->y;
-    size[5] = star->z;
+    
+    // Store actual 3D bounding box of the star: [x - R, y - R, z - R, x + R, y + R, z + R]
+    size[0] = star->x - star->radius;
+    size[1] = star->y - star->radius;
+    size[2] = star->z - star->radius;
+    size[3] = star->x + star->radius;
+    size[4] = star->y + star->radius;
+    size[5] = star->z + star->radius;
     
     (*stars)++;
     return KD_OK;
@@ -65,16 +66,45 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
+    // Check and read optional G, BP, and RP photometric magnitude columns
+    int g_col, bp_col, rp_col;
+    int g_status = 0, bp_status = 0, rp_status = 0;
+    fits_get_colnum(fptr, CASEINSEN, "phot_g_mean_mag", &g_col, &g_status);
+    fits_get_colnum(fptr, CASEINSEN, "phot_bp_mean_mag", &bp_col, &bp_status);
+    fits_get_colnum(fptr, CASEINSEN, "phot_rp_mean_mag", &rp_col, &rp_status);
+    
     int64_t *ids = malloc(num_rows * sizeof(int64_t));
     double *ras = malloc(num_rows * sizeof(double));
     double *decs = malloc(num_rows * sizeof(double));
     double *plxs = malloc(num_rows * sizeof(double));
+    
+    double *g_mags = malloc(num_rows * sizeof(double));
+    double *bp_mags = malloc(num_rows * sizeof(double));
+    double *rp_mags = malloc(num_rows * sizeof(double));
     
     int anynul;
     fits_read_col(fptr, TLONGLONG, id_col, 1, 1, num_rows, NULL, ids, &anynul, &status);
     fits_read_col(fptr, TDOUBLE, ra_col, 1, 1, num_rows, NULL, ras, &anynul, &status);
     fits_read_col(fptr, TDOUBLE, dec_col, 1, 1, num_rows, NULL, decs, &anynul, &status);
     fits_read_col(fptr, TDOUBLE, parallax_col, 1, 1, num_rows, NULL, plxs, &anynul, &status);
+    
+    if (g_status == 0) {
+        fits_read_col(fptr, TDOUBLE, g_col, 1, 1, num_rows, NULL, g_mags, &anynul, &status);
+    } else {
+        for(long i=0; i<num_rows; i++) g_mags[i] = NAN;
+    }
+    
+    if (bp_status == 0) {
+        fits_read_col(fptr, TDOUBLE, bp_col, 1, 1, num_rows, NULL, bp_mags, &anynul, &status);
+    } else {
+        for(long i=0; i<num_rows; i++) bp_mags[i] = NAN;
+    }
+    
+    if (rp_status == 0) {
+        fits_read_col(fptr, TDOUBLE, rp_col, 1, 1, num_rows, NULL, rp_mags, &anynul, &status);
+    } else {
+        for(long i=0; i<num_rows; i++) rp_mags[i] = NAN;
+    }
     
     fits_close_file(fptr, &status);
     
@@ -90,10 +120,33 @@ int main(int argc, char *argv[]) {
         double y = d * cos(dec_rad) * sin(ra_rad);
         double z = d * sin(dec_rad);
         
+        // Calculate physical radius of the star (R in terms of Solar Radii R_sun)
+        double r_solar = 1.0; // Default fallback to 1 Solar Radius
+        
+        if (!isnan(g_mags[i]) && !isnan(bp_mags[i]) && !isnan(rp_mags[i])) {
+            double abs_g = g_mags[i] - 5.0 * log10(d) + 5.0;
+            double lum = pow(10.0, (4.67 - abs_g) / 2.5);
+            double color = bp_mags[i] - rp_mags[i];
+            double teff = pow(10.0, 3.979 - 0.20 * color);
+            
+            if (teff >= 2000.0 && teff <= 50000.0 && lum > 0.0) {
+                double calc_r = sqrt(lum) * pow(5778.0 / teff, 2.0);
+                if (calc_r >= 0.01 && calc_r <= 1000.0) {
+                    r_solar = calc_r;
+                }
+            }
+        }
+        
+        // Convert solar radius to scaled coordinate space:
+        // R_scaled = R * 22.56 (since 1 Rsun = 22.56 units in our 1e9 parsecs grid)
+        int64_t r_scaled = (int64_t)(r_solar * 22.56);
+        if (r_scaled < 1) r_scaled = 1; // At least 1 unit bounding box
+        
         stars[valid_count].source_id = ids[i];
         stars[valid_count].x = (int64_t)(x * SCALE_FACTOR);
         stars[valid_count].y = (int64_t)(y * SCALE_FACTOR);
         stars[valid_count].z = (int64_t)(z * SCALE_FACTOR);
+        stars[valid_count].radius = r_scaled;
         valid_count++;
     }
     
@@ -108,6 +161,7 @@ int main(int argc, char *argv[]) {
     kd_3d_64_serialize(tree, argv[2]);
     
     free(ids); free(ras); free(decs); free(plxs); free(stars);
+    free(g_mags); free(bp_mags); free(rp_mags);
     printf("Done!\n");
     return 0;
 }
