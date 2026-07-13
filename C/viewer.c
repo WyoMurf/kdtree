@@ -81,13 +81,25 @@ void UpdateFreeCamera(Camera3D *camera, float *speed, float deltaTime) {
 }
 
 int main(int argc, char **argv) {
-    printf("Scanning /backup/star-catalogs/ for .kdtree files...\n");
-    
     glob_t glob_result;
-    int glob_ret = glob("/backup/star-catalogs/GaiaSource_Filtered_*.kdtree", GLOB_ERR, NULL, &glob_result);
+    printf("Scanning current directory for GaiaSource_Filtered_*.kdtree files...\n");
+    int glob_ret = glob("GaiaSource_Filtered_*.kdtree", GLOB_ERR, NULL, &glob_result);
     
-    if (glob_ret != 0) {
-        printf("No .kdtree files found in /backup/star-catalogs/. Please run build_kdtrees.sh first.\n");
+    if (glob_ret != 0 || glob_result.gl_pathc == 0) {
+        printf("No local .kdtree files found. Scanning /backup/stars2/...\n");
+        if (glob_ret == 0) globfree(&glob_result);
+        glob_ret = glob("/backup/stars2/GaiaSource_Filtered_*.kdtree", GLOB_ERR, NULL, &glob_result);
+    }
+    
+    if (glob_ret != 0 || glob_result.gl_pathc == 0) {
+        printf("No files found in /backup/stars2/. Scanning /backup/star-catalogs/...\n");
+        if (glob_ret == 0) globfree(&glob_result);
+        glob_ret = glob("/backup/star-catalogs/GaiaSource_Filtered_*.kdtree", GLOB_ERR, NULL, &glob_result);
+    }
+    
+    if (glob_ret != 0 || glob_result.gl_pathc == 0) {
+        printf("Error: No GaiaSource_Filtered_*.kdtree files found in current directory, /backup/stars2/, or /backup/star-catalogs/.\n");
+        printf("Please run the pipeline or build_kdtrees.sh first.\n");
         return 1;
     }
     
