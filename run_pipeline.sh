@@ -27,9 +27,9 @@ if [ ! -f "$MD5_FILE" ]; then
     exit 1
 fi
 
-# Generate chunks list
+# Generate chunks list -- the '$d' deletes the last line, which is the MD5 file
 chunks_file="${BASE_DIR}/chunks.txt"
-awk '{print $2}' "$MD5_FILE" | sed 's/GaiaSource_//' | sed 's/\.csv\.gz//' > "$chunks_file"
+awk '{print $2}' "$MD5_FILE" | sed 's/GaiaSource_//' | sed 's/\.csv\.gz//' | sed '$d' > "$chunks_file"
 
 total_chunks=$(wc -l < "$chunks_file")
 echo "=========================================================="
