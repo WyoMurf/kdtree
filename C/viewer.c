@@ -81,6 +81,23 @@ void UpdateFreeCamera(Camera3D *camera, float *speed, float deltaTime) {
 }
 
 int main(int argc, char **argv) {
+    long max_files = -1; // -1 means no limit (all available files)
+    if (argc > 1) {
+        if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
+            printf("Usage: %s [max_files_to_load]\n", argv[0]);
+            printf("  max_files_to_load: a positive integer limiting the number of .kdtree files loaded\n");
+            return 0;
+        }
+        char *endptr;
+        long val = strtol(argv[1], &endptr, 10);
+        if (*endptr != '\0' || val <= 0) {
+            printf("Error: invalid limit '%s'. It must be a positive integer.\n", argv[1]);
+            printf("Usage: %s [max_files_to_load]\n", argv[0]);
+            return 1;
+        }
+        max_files = val;
+    }
+
     glob_t glob_result;
     printf("Scanning current directory for GaiaSource_Filtered_*.kdtree files...\n");
     int glob_ret = glob("GaiaSource_Filtered_*.kdtree", GLOB_ERR, NULL, &glob_result);
@@ -103,17 +120,26 @@ int main(int argc, char **argv) {
         return 1;
     }
     
-    printf("Found %zu KD-Tree files to load.\n", glob_result.gl_pathc);
+    printf("Found %zu KD-Tree files on disk.\n", glob_result.gl_pathc);
+    size_t files_to_load = glob_result.gl_pathc;
+    if (max_files > 0) {
+        if ((size_t)max_files < files_to_load) {
+            files_to_load = (size_t)max_files;
+        }
+        printf("Limiting load to the first %zu files as specified.\n", files_to_load);
+    } else {
+        printf("Loading all %zu files.\n", files_to_load);
+    }
     
     // Allocate coordinate buffer dynamically (each star is 3 floats)
-    size_t capacity = 1000000; // Start with capacity for 1 million stars
+    size_t capacity = 300000; // Start with capacity for 1 million stars
     float *positions = malloc(capacity * 3 * sizeof(float));
     size_t star_count = 0;
     
     // Keep track of average star position to point the camera
     double sumX = 0, sumY = 0, sumZ = 0;
     
-    for (size_t i = 0; i < glob_result.gl_pathc; i++) {
+    for (size_t i = 0; i < files_to_load; i++) {
         char *path = glob_result.gl_pathv[i];
         int fd = open(path, O_RDONLY);
         if (fd == -1) {

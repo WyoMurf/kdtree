@@ -23,8 +23,7 @@ elif [ ! -f "$MD5_FILE" ] && [ -f "${BASE_DIR}/Gaia_source_MD5SUM.txt" ]; then
 fi
 
 if [ ! -f "$MD5_FILE" ]; then
-    echo "Error: Gaia_source_MD5SUM.txt not found. Please place it in this directory."
-    exit 1
+    wget https://cdn.gea.esac.esa.int/Gaia/gdr3/gaia_source/Gaia_source_MD5SUM.txt 
 fi
 
 # Generate chunks list -- the '$d' deletes the last line, which is the MD5 file

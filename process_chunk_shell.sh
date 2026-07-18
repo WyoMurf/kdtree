@@ -21,6 +21,18 @@ if [ -f "./fits2kd" ]; then
     CONVERTER="./fits2kd"
 elif [ -f "${BASE_DIR}/fits2kd" ]; then
     CONVERTER="${BASE_DIR}/fits2kd"
+elif [ -f "${BASE_DIR}/C/fits2kd" ]; then
+    CONVERTER="${BASE_DIR}/C/fits2kd"
+fi
+
+# Auto-detect local csv2fits or fallback to global path
+CSV2FITS="/home/murf/kdtree/C/csv2fits"
+if [ -f "./csv2fits" ]; then
+    CSV2FITS="./csv2fits"
+elif [ -f "${BASE_DIR}/csv2fits" ]; then
+    CSV2FITS="${BASE_DIR}/csv2fits"
+elif [ -f "${BASE_DIR}/C/csv2fits" ]; then
+    CSV2FITS="${BASE_DIR}/C/csv2fits"
 fi
 
 # Auto-detect local python environment or fallback to system python
@@ -55,12 +67,21 @@ if [ ! -f "${BASE_DIR}/${ASTRO_FILE}" ] || ! gzip -t "${BASE_DIR}/${ASTRO_FILE}"
     wget -q -c "${ASTRO_URL}${ASTRO_FILE}" -O "${BASE_DIR}/${ASTRO_FILE}"
 fi
 
-# 3. Merge, filter, apply ZP correction, and write Filtered fits directly
-"$PYTHON" "${BASE_DIR}/process_chunk.py" "${BASE_DIR}/${GAIA_FILE}" "${BASE_DIR}/${ASTRO_FILE}" "${BASE_DIR}/${OUT_FILTERED}"
+# 3. Merge, filter using C program, then apply ZP correction in Python
+"$CSV2FITS" "${BASE_DIR}/${GAIA_FILE}" "${BASE_DIR}/${ASTRO_FILE}" "${BASE_DIR}/${OUT_FILTERED}"
 status=$?
 
 if [ $status -ne 0 ]; then
-    echo "[ERROR] Python processing failed for chunk $CHUNK"
+    echo "[ERROR] C csv2fits failed for chunk $CHUNK"
+    rm -f "${BASE_DIR}/${OUT_FILTERED}" "${BASE_DIR}/${GAIA_FILE}" "${BASE_DIR}/${ASTRO_FILE}"
+    exit 1
+fi
+
+"$PYTHON" "${BASE_DIR}/apply_zeropoint.py" "${BASE_DIR}/${OUT_FILTERED}"
+status=$?
+
+if [ $status -ne 0 ]; then
+    echo "[ERROR] Python zero-point correction failed for chunk $CHUNK"
     rm -f "${BASE_DIR}/${OUT_FILTERED}" "${BASE_DIR}/${GAIA_FILE}" "${BASE_DIR}/${ASTRO_FILE}"
     exit 1
 fi
