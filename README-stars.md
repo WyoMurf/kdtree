@@ -15,9 +15,10 @@ a half-year ago, when the two images were taken from opposite ends of the earth'
 The distance between the two observation points is 2 AU. They then can calculate using
 geometry the distance (parallax) of the star. There's all sorts of complexity involved,
 but we'll ignore most of that for the time being. The celestial sphere is split up into
-786,431 chunks, each with a number. The Gaia folks have grouped several grid rectangles together
-so as 500,000 stars in each "chunk". They are available in gzip-compressed CSV files.
-The basic data (ra, dec, and parallax, plus a bunch of other relevant data) is in
+786,432 chunks, each with a number. (It's a system called "HEALPix" (lev 8) -- look it up in
+Wikipedia (https://en.wikipedia.org/wiki/HEALPix). The Gaia folks have grouped several grid 
+rectangles together so as 500,000 stars in each "chunk". They are available in gzip-compressed 
+CSV files. The basic data (ra, dec, and parallax, plus a bunch of other relevant data) is in
 GaiaSource (grid coord-grid coord).csv.gz. Another set of data is stored in the 
 Astrophysical_parameters files, which has other data, like how bright, the spectral data,
 the odds of the star belonging to particular classes of stars, etc. etc. My scripts
@@ -43,11 +44,15 @@ stars fly by as I travel at FTL speeds.
 
 Someday, they'll send out two probes at opposite ends of a Neptunish sized orbit, get them
 sync'd up so that they take their images at the same ~second, and then they'll get really
-good, solid parallax value that should cover the entire the entire galaxy, and then some.
-I picture star maps that are hierarchical, covering individual stars, and their entire
-planetary systems.
+good, solid parallax value without the individual star movements to clutter things up-- 
+that should cover the entire galaxy, and then some.
 
-Any way, it's a demonstration tool. A lot of fun building it. Hope you enjoy.
+I picture star maps that are hierarchical, covering individual stars, and their entire
+planetary systems as an index into a separate database, with carefully timestamped data
+that will allow true current position based on individual star and planet movements.
+
+Any way, it's a demonstration tool. I had a lot of fun building it. Very educational! 
+Hope you enjoy.
 
 And, many thanks to Gemini, which helped a great deal.
 
