@@ -130,8 +130,21 @@ else
     time_str="Calculating..."
 fi
 
+# Calculate elapsed time since pipeline started
+pipeline_start_val=$(cat "${BASE_DIR}/pipeline_start.txt" 2>/dev/null)
+if [ -n "$pipeline_start_val" ]; then
+    pipe_elapsed=$((end_time - pipeline_start_val))
+    eh=$((pipe_elapsed / 3600))
+    em=$(((pipe_elapsed % 3600) / 60))
+    es=$((pipe_elapsed % 60))
+    elapsed_str=$(printf "%02d:%02d:%02d" $eh $em $es)
+else
+    elapsed_str="Calculating..."
+fi
+
 echo "=========================================================="
 echo "[PROGRESS] Chunks completed: $completed_count / $total_chunks"
 echo "[PROGRESS] Running Avg Chunk: ${avg_active}s (Effective: ${parallel_avg}s)"
+echo "[PROGRESS] Total time elapsed: ${elapsed_str}"
 echo "[PROGRESS] Estimated time remaining: $time_str"
 echo "=========================================================="

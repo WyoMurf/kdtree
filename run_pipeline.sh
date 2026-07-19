@@ -12,7 +12,7 @@ cd "$BASE_DIR" || exit 1
 chmod +x "${BASE_DIR}/process_chunk_shell.sh"
 
 # Clear old progress logs
-rm -f "${BASE_DIR}/progress.log"
+rm -f "${BASE_DIR}/progress.log" "${BASE_DIR}/pipeline_start.txt"
 
 # Find Gaia MD5 SUM file dynamically (local or fallback)
 MD5_FILE="/backup/star-catalogs/Gaia_source_MD5SUM.txt"
@@ -39,9 +39,25 @@ echo "Target Directory:        $BASE_DIR"
 echo "MD5 Index File:          $MD5_FILE"
 echo "----------------------------------------------------------"
 
+# Record the pipeline start time globally
+pipeline_start_time=$(date +%s)
+echo "$pipeline_start_time" > "${BASE_DIR}/pipeline_start.txt"
+
 # Run in parallel using GNU xargs!
 cat "$chunks_file" | xargs -I {} -P $MAX_THREADS "${BASE_DIR}/process_chunk_shell.sh" "{}"
 
+# Calculate and record total elapsed time
+pipeline_end_time=$(date +%s)
+total_elapsed=$((pipeline_end_time - pipeline_start_time))
+eh=$((total_elapsed / 3600))
+em=$(((total_elapsed % 3600) / 60))
+es=$((total_elapsed % 60))
+elapsed_str=$(printf "%02d:%02d:%02d" $eh $em $es)
+
+# Clean up global start time file
+rm -f "${BASE_DIR}/pipeline_start.txt"
+
 echo "=========================================================="
 echo " All Parallel Pipeline tasks completed!"
+echo " Total pipeline execution time: $elapsed_str"
 echo "=========================================================="
