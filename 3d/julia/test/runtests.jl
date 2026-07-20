@@ -52,9 +52,9 @@ for CType in (Int32, Int64, Int128)
             
             boxes = Box{CType}[]
             for i in 1:10000
-                x1 = rand(CType(-100000):CType(100000))
-                y1 = rand(CType(-100000):CType(100000))
-                z1 = rand(CType(-100000):CType(100000))
+                x1 = rand(CType(-20000):CType(20000))
+                y1 = rand(CType(-20000):CType(20000))
+                z1 = rand(CType(-20000):CType(20000))
                 x2 = x1 + rand(CType(1):CType(1000))
                 y2 = y1 + rand(CType(1):CType(1000))
                 z2 = z1 + rand(CType(1):CType(1000))
@@ -69,9 +69,9 @@ for CType in (Int32, Int64, Int128)
             
             for m in [1, 2, 4, 8, 16]
                 for q in 1:50
-                    qx = rand(CType(-100000):CType(100000))
-                    qy = rand(CType(-100000):CType(100000))
-                    qz = rand(CType(-100000):CType(100000))
+                    qx = rand(CType(-20000):CType(20000))
+                    qy = rand(CType(-20000):CType(20000))
+                    qz = rand(CType(-20000):CType(20000))
                     
                     list = nearest(tree, qx, qy, qz, m)
                     @test length(list) == m
@@ -106,11 +106,17 @@ for CType in (Int32, Int64, Int128)
             insert!(tree, "item2", (CType(20), CType(20), CType(20), CType(20), CType(20), CType(20)))
             insert!(tree, "item3", (CType(5), CType(5), CType(5), CType(5), CType(5), CType(5)))
 
+            # Test get_bounds
+            @test get_bounds(tree) == (CType(5), CType(5), CType(5), CType(20), CType(20), CType(20))
+
             filename = "test_serialize_$(CType).kdtree"
             serialize(tree, filename, x -> parse(UInt64, replace(x, "item" => "")))
             
             node_size = 8 + 6*sizeof(CType) + 3*sizeof(CType) + 16
             @test filesize(filename) == 3 * node_size
+
+            # Test get_serialized_bounds
+            @test get_serialized_bounds(filename, CType, 3) == (CType(5), CType(5), CType(5), CType(20), CType(20), CType(20))
             
             rm(filename)
         end

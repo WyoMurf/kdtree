@@ -138,11 +138,17 @@ for CType in (Int32, Int64, Int128)
             insert!(tree, "item2", (CType(20), CType(20), CType(20), CType(20)))
             insert!(tree, "item3", (CType(5), CType(5), CType(5), CType(5)))
 
+            # Test get_bounds
+            @test get_bounds(tree) == (CType(5), CType(5), CType(20), CType(20))
+
             filename = "test_serialize_$(CType).kdtree"
             serialize(tree, filename, x -> parse(UInt64, replace(x, "item" => "")))
             
             node_size = 8 + 4*sizeof(CType) + 3*sizeof(CType) + 16
             @test filesize(filename) == 3 * node_size
+
+            # Test get_serialized_bounds
+            @test get_serialized_bounds(filename, CType, 2) == (CType(5), CType(5), CType(20), CType(20))
             
             rm(filename)
         end

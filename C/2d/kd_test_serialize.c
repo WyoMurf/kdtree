@@ -62,12 +62,32 @@ int main() {
     int count = kd_count(tree);
     printf("kd_count finished: %d\n", count);
     assert(count == 3);
+
+    // Test kd_get_bounds
+    kd_box bounds;
+    int bounds_ret = kd_get_bounds(tree, bounds);
+    assert(bounds_ret == KD_OK);
+    assert(bounds[KD_LEFT] == 5);
+    assert(bounds[KD_BOTTOM] == 5);
+    assert(bounds[KD_RIGHT] == 20);
+    assert(bounds[KD_TOP] == 20);
+    printf("kd_get_bounds test passed.\n");
     
     const char *filename = "test_serialize.kdtree";
     printf("Calling kd_serialize...\n");
     int ret = kd_serialize(tree, filename);
     printf("kd_serialize finished.\n");
     assert(ret == 0);
+
+    // Test kd_get_serialized_bounds
+    kd_box ser_bounds;
+    int ser_ret = kd_get_serialized_bounds(filename, ser_bounds);
+    assert(ser_ret == KD_OK);
+    assert(ser_bounds[KD_LEFT] == 5);
+    assert(ser_bounds[KD_BOTTOM] == 5);
+    assert(ser_bounds[KD_RIGHT] == 20);
+    assert(ser_bounds[KD_TOP] == 20);
+    printf("kd_get_serialized_bounds test passed.\n");
     
     kd_destroy(tree, NULL);
     

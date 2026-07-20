@@ -76,6 +76,8 @@ typedef int32_t coord_t;
 #define kd_badness        kd_3d_128_badness
 #define kd_rebuild        kd_3d_128_rebuild
 #define kd_serialize      kd_3d_128_serialize
+#define kd_get_bounds     kd_3d_128_get_bounds
+#define kd_get_serialized_bounds kd_3d_128_get_serialized_bounds
 #define kd_mmap_node      kd_3d_128_mmap_node
 #define kd_nearest        kd_3d_128_nearest
 #define kd_print_nearest  kd_3d_128_print_nearest
@@ -104,6 +106,8 @@ typedef int32_t coord_t;
 #define kd_badness        kd_3d_64_badness
 #define kd_rebuild        kd_3d_64_rebuild
 #define kd_serialize      kd_3d_64_serialize
+#define kd_get_bounds     kd_3d_64_get_bounds
+#define kd_get_serialized_bounds kd_3d_64_get_serialized_bounds
 #define kd_mmap_node      kd_3d_64_mmap_node
 #define kd_nearest        kd_3d_64_nearest
 #define kd_print_nearest  kd_3d_64_print_nearest
@@ -132,6 +136,8 @@ typedef int32_t coord_t;
 #define kd_badness        kd_3d_32_badness
 #define kd_rebuild        kd_3d_32_rebuild
 #define kd_serialize      kd_3d_32_serialize
+#define kd_get_bounds     kd_3d_32_get_bounds
+#define kd_get_serialized_bounds kd_3d_32_get_serialized_bounds
 #define kd_mmap_node      kd_3d_32_mmap_node
 #define kd_nearest        kd_3d_32_nearest
 #define kd_print_nearest  kd_3d_32_print_nearest
@@ -244,5 +250,9 @@ typedef struct kd_priority
 
 extern int kd_nearest (kd_tree tree, coord_t x, coord_t y, coord_t z, int m, kd_priority **alist);
 extern void kd_print_nearest (kd_tree tree, coord_t x, coord_t y, coord_t z, int m);
+
+extern int kd_serialize(kd_tree tree, const char *filename);
+extern int kd_get_bounds(kd_tree tree, kd_box bounds);
+extern int kd_get_serialized_bounds(const char *filename, kd_box bounds);
 
 #endif /* KD_HEADER */

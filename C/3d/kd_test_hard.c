@@ -20,8 +20,8 @@
 #define KD_BOXES	1000000
 #define KD_REGIONS      1000
 
-#define MIN_RANGE	-100000
-#define MAX_RANGE	100000
+#define MIN_RANGE	-20000
+#define MAX_RANGE	20000
 #define RANGE_SPAN (MAX_RANGE - MIN_RANGE + 1)
 #define BOX_RANGE	1000
 

@@ -1,6 +1,6 @@
 module KDTree
 
-export serialize, Tree, Box, insert!, count_items, is_member, hard_delete!, really_delete!, badness, nearest, Priority, search, LEFT, BOTTOM, RIGHT, TOP
+export serialize, get_bounds, get_serialized_bounds, Tree, Box, insert!, count_items, is_member, hard_delete!, really_delete!, badness, nearest, Priority, search, LEFT, BOTTOM, RIGHT, TOP
 
 const Box{C<:Integer} = NTuple{4, C}
 const LEFT = 1
@@ -758,6 +758,83 @@ function serialize(tree::Tree{T, C}, filename::String, item_to_id::Function) whe
 
     serialize_node(tree.root)
     close(io)
+end
+
+function get_bounds(tree::Tree{T, C})::Union{Box{C}, Nothing} where {T, C<:Integer}
+    if tree.root === nothing
+        return nothing
+    end
+    
+    bounds = [tree.root.size...]
+    dim = length(bounds) ÷ 2
+    
+    function traverse(node::Union{Node{T, C}, Nothing})
+        if node === nothing
+            return
+        end
+        if node.item !== nothing
+            for d in 1:dim
+                if node.size[d] < bounds[d]
+                    bounds[d] = node.size[d]
+                end
+                if node.size[d + dim] > bounds[d + dim]
+                    bounds[d + dim] = node.size[d + dim]
+                end
+            end
+        end
+        traverse(node.sons[1])
+        traverse(node.sons[2])
+    end
+    
+    traverse(tree.root)
+    return Box{C}((bounds...,))
+end
+
+function get_serialized_bounds(filename::String, CType::Type{C}, dim::Int=2)::Union{Box{C}, Nothing} where {C<:Integer}
+    if !isfile(filename)
+        return nothing
+    end
+    
+    node_size = 8 + 2*dim*sizeof(C) + 3*sizeof(C) + 16
+    file_size = filesize(filename)
+    if file_size == 0 || file_size % node_size != 0
+        return nothing
+    end
+    
+    node_count = file_size ÷ node_size
+    bounds = nothing
+    
+    io = open(filename, "r")
+    try
+        for i in 1:node_count
+            seek(io, (i - 1) * node_size)
+            source_id = read(io, UInt64)
+            
+            size_vec = [read(io, CType) for _ in 1:(2*dim)]
+            
+            if source_id != 0
+                if bounds === nothing
+                    bounds = copy(size_vec)
+                else
+                    for d in 1:dim
+                        if size_vec[d] < bounds[d]
+                            bounds[d] = size_vec[d]
+                        end
+                        if size_vec[d + dim] > bounds[d + dim]
+                            bounds[d + dim] = size_vec[d + dim]
+                        end
+                    end
+                end
+            end
+        end
+    finally
+        close(io)
+    end
+    
+    if bounds === nothing
+        return nothing
+    end
+    return NTuple{2*dim, C}((bounds...,))
 end
 
 end

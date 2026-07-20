@@ -1007,3 +1007,132 @@ func (t *Tree[T]) Serialize(filename string, itemToID func(interface{}) uint64) 
 
 	return nil
 }
+
+// GetBounds calculates the exact bounding box of all active nodes in the tree
+func (t *Tree[T]) GetBounds() (Box[T], error) {
+	var bounds Box[T]
+	if t.Root == nil {
+		return bounds, fmt.Errorf("Tree is empty")
+	}
+
+	first := true
+	var traverse func(node *Node[T])
+	traverse = func(node *Node[T]) {
+		if node == nil {
+			return
+		}
+		if node.Item != nil {
+			if first {
+				bounds = node.Size
+				first = false
+			} else {
+				for d := 0; d < len(bounds)/2; d++ {
+					if node.Size[d] < bounds[d] {
+						bounds[d] = node.Size[d]
+					}
+					if node.Size[d+len(bounds)/2] > bounds[d+len(bounds)/2] {
+						bounds[d+len(bounds)/2] = node.Size[d+len(bounds)/2]
+					}
+				}
+			}
+		}
+		traverse(node.Sons[0])
+		traverse(node.Sons[1])
+	}
+
+	traverse(t.Root)
+	if first {
+		return bounds, fmt.Errorf("No active items in tree")
+	}
+	return bounds, nil
+}
+
+func sizeofT[T Coord]() int {
+	var val T
+	switch any(val).(type) {
+	case int32:
+		return 4
+	case int64, int:
+		return 8
+	default:
+		return 8
+	}
+}
+
+// GetSerializedBounds calculates the bounding box directly from a serialized .kdtree file
+func GetSerializedBounds[T Coord](filename string) (Box[T], error) {
+	var bounds Box[T]
+	file, err := os.Open(filename)
+	if err != nil {
+		return bounds, err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return bounds, err
+	}
+
+	dim := len(bounds) / 2
+	tSize := sizeofT[T]()
+	recordSize := int64(8 + (2*dim+3)*tSize + 16)
+	if info.Size()%recordSize != 0 {
+		return bounds, fmt.Errorf("Invalid file size")
+	}
+
+	nodeCount := info.Size() / recordSize
+	if nodeCount == 0 {
+		return bounds, fmt.Errorf("File is empty")
+	}
+
+	first := true
+	for i := int64(0); i < nodeCount; i++ {
+		var sourceID uint64
+		if err := binary.Read(file, binary.LittleEndian, &sourceID); err != nil {
+			return bounds, err
+		}
+
+		box := make([]T, 2*dim)
+		for j := 0; j < 2*dim; j++ {
+			var val T
+			if tSize == 4 {
+				var val32 int32
+				binary.Read(file, binary.LittleEndian, &val32)
+				val = T(val32)
+			} else {
+				var val64 int64
+				binary.Read(file, binary.LittleEndian, &val64)
+				val = T(val64)
+			}
+			box[j] = val
+		}
+
+		skipBytes := int64(3*tSize + 16)
+		if _, err := file.Seek(skipBytes, 1); err != nil {
+			return bounds, err
+		}
+
+		if sourceID != 0 {
+			if first {
+				for j := 0; j < 2*dim; j++ {
+					bounds[j] = box[j]
+				}
+				first = false
+			} else {
+				for d := 0; d < dim; d++ {
+					if box[d] < bounds[d] {
+						bounds[d] = box[d]
+					}
+					if box[d+dim] > bounds[d+dim] {
+						bounds[d+dim] = box[d+dim]
+					}
+				}
+			}
+		}
+	}
+
+	if first {
+		return bounds, fmt.Errorf("No active items in serialized file")
+	}
+	return bounds, nil
+}

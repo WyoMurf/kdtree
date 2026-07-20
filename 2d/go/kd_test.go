@@ -250,7 +250,17 @@ func TestSerialize(t *testing.T) {
 	tree.Insert("item2", Box[int32]{20, 20, 20, 20})
 	tree.Insert("item3", Box[int32]{5, 5, 5, 5})
 
-	err := tree.Serialize("test_serialize.kdtree", func(item interface{}) uint64 {
+	// Test GetBounds
+	bounds, err := tree.GetBounds()
+	if err != nil {
+		t.Fatalf("GetBounds failed: %v", err)
+	}
+	expectedBounds := Box[int32]{5, 5, 20, 20}
+	if bounds != expectedBounds {
+		t.Fatalf("Expected bounds %v, got %v", expectedBounds, bounds)
+	}
+
+	err = tree.Serialize("test_serialize.kdtree", func(item interface{}) uint64 {
 		switch item.(string) {
 		case "item1": return 1
 		case "item2": return 2
@@ -270,6 +280,15 @@ func TestSerialize(t *testing.T) {
 	expectedSize := int64(3 * 52)
 	if info.Size() != expectedSize {
 		t.Fatalf("Expected size %d, got %d", expectedSize, info.Size())
+	}
+
+	// Test GetSerializedBounds
+	serBounds, err := GetSerializedBounds[int32]("test_serialize.kdtree")
+	if err != nil {
+		t.Fatalf("GetSerializedBounds failed: %v", err)
+	}
+	if serBounds != expectedBounds {
+		t.Fatalf("Expected serialized bounds %v, got %v", expectedBounds, serBounds)
 	}
 
 	os.Remove("test_serialize.kdtree")

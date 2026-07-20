@@ -30,11 +30,18 @@ compression ratios. These filtered, compressed files are titled
 "GaiaSource_Filtered_<grid-range>.fits.gz". Then I take each "chunk", form it into a 3d kdtree
 and write a serialized version of the kdtree to disk titled: 
 "GaiaSource_Filtered_<grid-range>.kdtree" All of this takes about 2.5 minutes for each "chunk".
-Forming a kd-tree of 157,000 stars only takes a little over a second, including writing it out
-serialized to disk. Reading it in via memory mapping is even faster.
+Forming a kd-tree of 157,000 stars only takes a a second, including writing it out
+serialized to disk. Reading it in via memory mapping is even faster. I have challenged gemini
+to reduce this time, both in getting out of Python, and into C instead, and running everything
+in parallel. Experimentation tells me, that for my environment (starlink, 64G mem, etc), 5
+levels of parallelism was Ok, getting some complaints about internet bandwidth being saturated,
+etc. At 5 threads, I was getting a time of 5:30:06 (5+1/2 hours), which was much, much better
+than the whole week of previous coding. 4 levels of parallelism took 6:07:26, and 3 levels took
+6:46:36 hours. Below 5 levels, I had no complaints about internet bandwidth saturation.
 The original .csv.gz files are removed. The total space for the resulting data is about 90G total. The .csv data are estimated to take up about 9 Terabytes of disk to store, so moving
-to the .fits file format, and weeding out stars without a "solid" parallax value cuts total
-storage space to 1/100th the space. The run_pipeline.sh script will run the sets in parallel so as to speed up the whole process. My workstation can safely run 3 parallel pipelines. 10 pipelines freezes my meager workstation, and I have to reboot it to get it back.
+to the .fits file format, and weeding out stars without a "solid" parallax values cuts total
+storage space to 1/100th the space.  My workstation can safely run 3-5 parallel pipelines. 10 
+pipelines freezes my meager workstation, and I have to reboot it to get it back.
 
 The viewer.py justs reads the first "chunk" of the .fits.gz data, and displays the ~159,000 stars contained therein. It's pretty quick. The C version uses the raylib library to display 
 the stars, but my poor 2060 RTX gpu card can realistically only about 30 of the ~3300 files.
@@ -50,6 +57,15 @@ that should cover the entire galaxy, and then some.
 I picture star maps that are hierarchical, covering individual stars, and their entire
 planetary systems as an index into a separate database, with carefully timestamped data
 that will allow true current position based on individual star and planet movements.
+
+Some drawbacks to this approach (mapping celestial sphere coordinates to cartesian), is that
+a 3-d viewer will see, in any random view of the stars, perhaps hundreds, if not thousands, 
+of separate kd-trees in each view. Each grid of the HEALPix sphere forms a "ray" of stars
+sprinkled over incredible distances. I have played with splitting that ray into separate
+trees based on distance, which forms many more kdtrees, but reduces bounding box overlap
+a bit. A kdtree of these split-up chunks could be created, so that any one view might not
+retrieve such huge numbers of stars. If you are viewing all the stars at once, well, such
+is life! 
 
 Any way, it's a demonstration tool. I had a lot of fun building it. Very educational! 
 Hope you enjoy.
@@ -112,6 +128,9 @@ cp run_pipeline.sh process_chunk_shell.sh C/fits2kd <dir you want to download>
  
 Then you can simply run the run_pipeline.sh script to begin downloading the star 
 catalog data. You can change the level of parallelism by editing the run_pipeline script.
+I have the default parallelism set to 5. You may find this too high or too low for your
+setup. Feel free to modify the value of MAX_THREADS in both run_pipeline.sh and
+process_chunk_shell.sh.
 
 and when you have a sufficient sample set, you can run either the python viewer, 
 or the C viewer.
@@ -124,6 +143,9 @@ cd <star-catalog data dir>
 python viewer.py <path to a GaiaSource_Filtered_<range>.fits.gz file>
 and/or:
 ./viewer
+
+If you want to run the python viewer, remember to activate the virtual enviroment in
+your shell session first.
 
 This whole copy-everything-to-the-datadir-and-run-locally-from-there thing, was done
 to make it easy for you to use a disk that could handle 90 Gb to 9 Tb of data. Not 

@@ -3,7 +3,6 @@
 # Master pipeline runner
 MAX_THREADS=3
 # Spawns up to $MAX_THREADS worker threads in parallel
-$MAX_THREADS
 # Dynamically resolve directory of this script
 BASE_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 cd "$BASE_DIR" || exit 1

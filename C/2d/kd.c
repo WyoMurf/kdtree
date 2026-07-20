@@ -2390,3 +2390,82 @@ int kd_serialize(kd_tree tree, const char *filename) {
     close(fd);
     return 0;
 }
+
+static void get_bounds_recursive(KDElem *node, coord_t *bounds) {
+    if (!node || node->item == NULL) return;
+    
+    for (int i = 0; i < 2; i++) {
+        if (node->size[i] < bounds[i]) bounds[i] = node->size[i];
+        if (node->size[i + 2] > bounds[i + 2]) bounds[i + 2] = node->size[i + 2];
+    }
+    
+    get_bounds_recursive(node->sons[0], bounds);
+    get_bounds_recursive(node->sons[1], bounds);
+}
+
+int kd_get_bounds(kd_tree tree, kd_box bounds) {
+    if (!tree) return KD_NOTFOUND;
+    KDTree *realTree = (KDTree *)tree;
+    if (!realTree->tree || realTree->tree->item == NULL) {
+        return KD_NOTFOUND;
+    }
+    
+    for (int i = 0; i < 2; i++) {
+        bounds[i] = realTree->tree->size[i];
+        bounds[i + 2] = realTree->tree->size[i + 2];
+    }
+    
+    get_bounds_recursive(realTree->tree, bounds);
+    return KD_OK;
+}
+
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+int kd_get_serialized_bounds(const char *filename, kd_box bounds) {
+    int fd = open(filename, O_RDONLY);
+    if (fd == -1) return KD_NOTFOUND;
+    
+    struct stat sb;
+    if (fstat(fd, &sb) == -1 || sb.st_size == 0) {
+        close(fd);
+        return KD_NOTFOUND;
+    }
+    
+    size_t node_count = sb.st_size / sizeof(kd_mmap_node);
+    if (node_count == 0) {
+        close(fd);
+        return KD_NOTFOUND;
+    }
+    
+    kd_mmap_node *nodes = mmap(NULL, sb.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (nodes == MAP_FAILED) {
+        close(fd);
+        return KD_NOTFOUND;
+    }
+    
+    int first = 1;
+    for (size_t i = 0; i < node_count; i++) {
+        if (nodes[i].source_id != 0) {
+            if (first) {
+                for (int d = 0; d < 2; d++) {
+                    bounds[d] = nodes[i].size[d];
+                    bounds[d + 2] = nodes[i].size[d + 2];
+                }
+                first = 0;
+            } else {
+                for (int d = 0; d < 2; d++) {
+                    if (nodes[i].size[d] < bounds[d]) bounds[d] = nodes[i].size[d];
+                    if (nodes[i].size[d + 2] > bounds[d + 2]) bounds[d + 2] = nodes[i].size[d + 2];
+                }
+            }
+        }
+    }
+    
+    munmap(nodes, sb.st_size);
+    close(fd);
+    
+    return first ? KD_NOTFOUND : KD_OK;
+}

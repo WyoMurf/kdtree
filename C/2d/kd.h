@@ -86,6 +86,8 @@ typedef int32_t coord_t;
 #define NEW_PATH          kd_2d_128_NEW_PATH
 #define unload_items      kd_2d_128_unload_items
 #define kd_serialize      kd_2d_128_serialize
+#define kd_get_bounds     kd_2d_128_get_bounds
+#define kd_get_serialized_bounds kd_2d_128_get_serialized_bounds
 #define kd_mmap_node      kd_2d_128_mmap_node
 #define kd_pkg_name       kd_2d_128_pkg_name
 #elif defined(COORD_64)
@@ -114,6 +116,8 @@ typedef int32_t coord_t;
 #define NEW_PATH          kd_2d_64_NEW_PATH
 #define unload_items      kd_2d_64_unload_items
 #define kd_serialize      kd_2d_64_serialize
+#define kd_get_bounds     kd_2d_64_get_bounds
+#define kd_get_serialized_bounds kd_2d_64_get_serialized_bounds
 #define kd_mmap_node      kd_2d_64_mmap_node
 #define kd_pkg_name       kd_2d_64_pkg_name
 #else
@@ -142,6 +146,8 @@ typedef int32_t coord_t;
 #define NEW_PATH          kd_2d_32_NEW_PATH
 #define unload_items      kd_2d_32_unload_items
 #define kd_serialize      kd_2d_32_serialize
+#define kd_get_bounds     kd_2d_32_get_bounds
+#define kd_get_serialized_bounds kd_2d_32_get_serialized_bounds
 #define kd_mmap_node      kd_2d_32_mmap_node
 #define kd_pkg_name       kd_2d_32_pkg_name
 #endif
@@ -233,5 +239,9 @@ extern kd_tree kd_rebuild ( kd_tree );
 
 extern int kd_nearest (kd_tree tree, coord_t x, coord_t y, int m, kd_priority **alist);
 extern void kd_print_nearest (kd_tree tree, coord_t x, coord_t y, int m);
+
+extern int kd_serialize(kd_tree tree, const char *filename);
+extern int kd_get_bounds(kd_tree tree, kd_box bounds);
+extern int kd_get_serialized_bounds(const char *filename, kd_box bounds);
 
 #endif /* KD_HEADER */

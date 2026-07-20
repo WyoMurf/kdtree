@@ -7,6 +7,7 @@ pub trait Coord: Copy + Ord + std::ops::Sub<Output = Self> + std::ops::Add<Outpu
     fn max_value() -> Self;
     fn to_f64(self) -> f64;
     fn write_to<W: std::io::Write>(self, writer: &mut W) -> std::io::Result<()>;
+    fn read_from<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self>;
 }
 
 impl Coord for i32 {
@@ -21,6 +22,12 @@ impl Coord for i32 {
     #[inline]
     fn write_to<W: std::io::Write>(self, writer: &mut W) -> std::io::Result<()> {
         writer.write_all(&self.to_le_bytes())
+    }
+    #[inline]
+    fn read_from<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut buf = [0u8; 4];
+        reader.read_exact(&mut buf)?;
+        Ok(i32::from_le_bytes(buf))
     }
 }
 
@@ -37,6 +44,12 @@ impl Coord for i64 {
     fn write_to<W: std::io::Write>(self, writer: &mut W) -> std::io::Result<()> {
         writer.write_all(&self.to_le_bytes())
     }
+    #[inline]
+    fn read_from<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut buf = [0u8; 8];
+        reader.read_exact(&mut buf)?;
+        Ok(i64::from_le_bytes(buf))
+    }
 }
 
 impl Coord for i128 {
@@ -51,6 +64,12 @@ impl Coord for i128 {
     #[inline]
     fn write_to<W: std::io::Write>(self, writer: &mut W) -> std::io::Result<()> {
         writer.write_all(&self.to_le_bytes())
+    }
+    #[inline]
+    fn read_from<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut buf = [0u8; 16];
+        reader.read_exact(&mut buf)?;
+        Ok(i128::from_le_bytes(buf))
     }
 }
 
@@ -926,6 +945,84 @@ impl<T: PartialEq + Clone, C: Coord> Tree<T, C> {
 
         Ok(())
     }
+
+    pub fn get_bounds(&self) -> Option<KdBox<C>> {
+        let mut bounds: Option<KdBox<C>> = None;
+        fn traverse<T, C: Coord>(node_idx: Option<usize>, arena: &Vec<Node<T, C>>, bounds: &mut Option<KdBox<C>>) {
+            if let Some(idx) = node_idx {
+                let n = &arena[idx];
+                if n.item.is_some() {
+                    if let Some(ref mut b) = bounds {
+                        let dim = b.len() / 2;
+                        for d in 0..dim {
+                            if n.size[d] < b[d] {
+                                b[d] = n.size[d];
+                            }
+                            if n.size[d + dim] > b[d + dim] {
+                                b[d + dim] = n.size[d + dim];
+                            }
+                        }
+                    } else {
+                        *bounds = Some(n.size.clone());
+                    }
+                }
+                traverse(n.sons[0], arena, bounds);
+                traverse(n.sons[1], arena, bounds);
+            }
+        }
+        traverse(self.root, &self.arena, &mut bounds);
+        bounds
+    }
+}
+
+pub fn get_serialized_bounds<C: Coord>(filename: &str) -> std::io::Result<Option<KdBox<C>>> {
+    use std::fs::File;
+    use std::io::{BufReader, Read};
+
+    let file = File::open(filename)?;
+    let mut reader = BufReader::new(file);
+
+    let mut bounds: Option<KdBox<C>> = None;
+    const DIM: usize = 3; // For 3D
+
+    loop {
+        let mut id_buf = [0u8; 8];
+        match reader.read_exact(&mut id_buf) {
+            Ok(_) => {}
+            Err(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(e) => return Err(e),
+        }
+        let source_id = u64::from_le_bytes(id_buf);
+
+        let mut size = [C::zero(); 2 * DIM];
+        for val in size.iter_mut() {
+            *val = C::read_from(&mut reader)?;
+        }
+
+        for _ in 0..3 {
+            C::read_from(&mut reader)?;
+        }
+
+        let mut child_buf = [0u8; 16];
+        reader.read_exact(&mut child_buf)?;
+
+        if source_id != 0 {
+            if let Some(ref mut b) = bounds {
+                for d in 0..DIM {
+                    if size[d] < b[d] {
+                        b[d] = size[d];
+                    }
+                    if size[d + DIM] > b[d + DIM] {
+                        b[d + DIM] = size[d + DIM];
+                    }
+                }
+            } else {
+                bounds = Some(size);
+            }
+        }
+    }
+
+    Ok(bounds)
 }
 
 pub fn intersect<C: Coord>(b1: &KdBox<C>, b2: &KdBox<C>) -> bool {
@@ -997,8 +1094,8 @@ mod tests {
                 use super::*;
 
                 const KD_BOXES: usize = 10000;
-                const MIN_RANGE: i32 = -100000;
-                const MAX_RANGE: i32 = 100000;
+                const MIN_RANGE: i32 = -20000;
+                const MAX_RANGE: i32 = 20000;
                 const RANGE_SPAN: i32 = MAX_RANGE - MIN_RANGE + 1;
                 const BOX_RANGE: i32 = 1000;
 
@@ -1127,26 +1224,35 @@ mod tests {
 
                 #[test]
                 fn test_serialize() {
-                    let mut tree = Tree::<String, $t>::new();
-                    let b1 = [<$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(10), <$t>::from_i32(10), <$t>::from_i32(10)];
-                    let b2 = [<$t>::from_i32(20), <$t>::from_i32(20), <$t>::from_i32(20), <$t>::from_i32(30), <$t>::from_i32(30), <$t>::from_i32(30)];
-                    let b3 = [<$t>::from_i32(5), <$t>::from_i32(5), <$t>::from_i32(5), <$t>::from_i32(15), <$t>::from_i32(15), <$t>::from_i32(15)];
+                   let mut tree = Tree::<String, $t>::new();
+                   let b1 = [<$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(10), <$t>::from_i32(10), <$t>::from_i32(10)];
+                   let b2 = [<$t>::from_i32(20), <$t>::from_i32(20), <$t>::from_i32(20), <$t>::from_i32(30), <$t>::from_i32(30), <$t>::from_i32(30)];
+                   let b3 = [<$t>::from_i32(5), <$t>::from_i32(5), <$t>::from_i32(5), <$t>::from_i32(15), <$t>::from_i32(15), <$t>::from_i32(15)];
 
-                    tree.insert("item1".to_string(), b1);
-                    tree.insert("item2".to_string(), b2);
-                    tree.insert("item3".to_string(), b3);
+                   tree.insert("item1".to_string(), b1);
+                   tree.insert("item2".to_string(), b2);
+                   tree.insert("item3".to_string(), b3);
 
-                    let filename = format!("test_serialize_{}.kdtree", stringify!($mod_name));
-                    let err = tree.serialize(&filename, |item| {
-                        item.replace("item", "").parse::<u64>().unwrap()
-                    });
-                    assert!(err.is_ok());
+                   // Test get_bounds
+                   let bounds = tree.get_bounds().unwrap();
+                   let expected_bounds: KdBox<$t> = [<$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(0), <$t>::from_i32(30), <$t>::from_i32(30), <$t>::from_i32(30)];
+                   assert_eq!(bounds, expected_bounds);
 
-                    let metadata = std::fs::metadata(&filename).unwrap();
-                    let expected_size = 3 * (8 + 9 * std::mem::size_of::<$t>() + 16);
-                    assert_eq!(metadata.len(), expected_size as u64);
+                   let filename = format!("test_serialize_{}.kdtree", stringify!($mod_name));
+                   let err = tree.serialize(&filename, |item| {
+                       item.replace("item", "").parse::<u64>().unwrap()
+                   });
+                   assert!(err.is_ok());
 
-                    let _ = std::fs::remove_file(&filename);
+                   let metadata = std::fs::metadata(&filename).unwrap();
+                   let expected_size = 3 * (8 + 9 * std::mem::size_of::<$t>() + 16);
+                   assert_eq!(metadata.len(), expected_size as u64);
+
+                   // Test get_serialized_bounds
+                   let ser_bounds = get_serialized_bounds::<$t>(&filename).unwrap().unwrap();
+                   assert_eq!(ser_bounds, expected_bounds);
+
+                   let _ = std::fs::remove_file(&filename);
                 }
             }
         };

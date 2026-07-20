@@ -8,6 +8,7 @@ if [ -z "$CHUNK" ]; then
     echo "Error: No chunk range provided."
     exit 1
 fi
+MAX_THREADS=4
 
 # Dynamically resolve directory of this script
 BASE_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
@@ -116,7 +117,7 @@ sum_elapsed=$(awk '{sum+=$1} END {print sum}' "${BASE_DIR}/progress.log")
 
 if [ $C_active -gt 0 ]; then
     avg_active=$(echo "scale=2; $sum_elapsed / $C_active" | bc)
-    parallel_avg=$(echo "scale=2; $avg_active / 10" | bc)
+    parallel_avg=$(echo "scale=2; $avg_active / $MAX_THREADS" | bc)
     remaining_seconds=$(echo "$remaining_chunks * $parallel_avg" | bc | cut -d'.' -f1)
     
     # Format remaining seconds to HH:MM:SS

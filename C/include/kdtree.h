@@ -42,6 +42,8 @@ extern void kd_2d_32_print(kd_tree);
 extern void kd_2d_32_badness(kd_tree);
 extern kd_tree kd_2d_32_rebuild(kd_tree);
 extern int kd_2d_32_serialize(kd_tree tree, const char *filename);
+extern int kd_2d_32_get_bounds(kd_tree tree, kd_2d_32_box bounds);
+extern int kd_2d_32_get_serialized_bounds(const char *filename, kd_2d_32_box bounds);
 extern int kd_2d_32_nearest(kd_tree tree, int32_t x, int32_t y, int m, kd_priority_2d_32 **alist);
 extern void kd_2d_32_print_nearest(kd_tree tree, int32_t x, int32_t y, int m);
 
@@ -64,6 +66,8 @@ extern void kd_2d_64_print(kd_tree);
 extern void kd_2d_64_badness(kd_tree);
 extern kd_tree kd_2d_64_rebuild(kd_tree);
 extern int kd_2d_64_serialize(kd_tree tree, const char *filename);
+extern int kd_2d_64_get_bounds(kd_tree tree, kd_2d_64_box bounds);
+extern int kd_2d_64_get_serialized_bounds(const char *filename, kd_2d_64_box bounds);
 extern int kd_2d_64_nearest(kd_tree tree, int64_t x, int64_t y, int m, kd_priority_2d_64 **alist);
 extern void kd_2d_64_print_nearest(kd_tree tree, int64_t x, int64_t y, int m);
 
@@ -86,6 +90,8 @@ extern void kd_2d_128_print(kd_tree);
 extern void kd_2d_128_badness(kd_tree);
 extern kd_tree kd_2d_128_rebuild(kd_tree);
 extern int kd_2d_128_serialize(kd_tree tree, const char *filename);
+extern int kd_2d_128_get_bounds(kd_tree tree, kd_2d_128_box bounds);
+extern int kd_2d_128_get_serialized_bounds(const char *filename, kd_2d_128_box bounds);
 extern int kd_2d_128_nearest(kd_tree tree, __int128 x, __int128 y, int m, kd_priority_2d_128 **alist);
 extern void kd_2d_128_print_nearest(kd_tree tree, __int128 x, __int128 y, int m);
 
@@ -108,6 +114,8 @@ extern void kd_3d_32_print(kd_tree);
 extern void kd_3d_32_badness(kd_tree);
 extern kd_tree kd_3d_32_rebuild(kd_tree);
 extern int kd_3d_32_serialize(kd_tree tree, const char *filename);
+extern int kd_3d_32_get_bounds(kd_tree tree, kd_3d_32_box bounds);
+extern int kd_3d_32_get_serialized_bounds(const char *filename, kd_3d_32_box bounds);
 extern int kd_3d_32_nearest(kd_tree tree, int32_t x, int32_t y, int32_t z, int m, kd_priority_3d_32 **alist);
 extern void kd_3d_32_print_nearest(kd_tree tree, int32_t x, int32_t y, int32_t z, int m);
 
@@ -130,6 +138,8 @@ extern void kd_3d_64_print(kd_tree);
 extern void kd_3d_64_badness(kd_tree);
 extern kd_tree kd_3d_64_rebuild(kd_tree);
 extern int kd_3d_64_serialize(kd_tree tree, const char *filename);
+extern int kd_3d_64_get_bounds(kd_tree tree, kd_3d_64_box bounds);
+extern int kd_3d_64_get_serialized_bounds(const char *filename, kd_3d_64_box bounds);
 extern int kd_3d_64_nearest(kd_tree tree, int64_t x, int64_t y, int64_t z, int m, kd_priority_3d_64 **alist);
 extern void kd_3d_64_print_nearest(kd_tree tree, int64_t x, int64_t y, int64_t z, int m);
 
@@ -152,6 +162,8 @@ extern void kd_3d_128_print(kd_tree);
 extern void kd_3d_128_badness(kd_tree);
 extern kd_tree kd_3d_128_rebuild(kd_tree);
 extern int kd_3d_128_serialize(kd_tree tree, const char *filename);
+extern int kd_3d_128_get_bounds(kd_tree tree, kd_3d_128_box bounds);
+extern int kd_3d_128_get_serialized_bounds(const char *filename, kd_3d_128_box bounds);
 extern int kd_3d_128_nearest(kd_tree tree, __int128 x, __int128 y, __int128 z, int m, kd_priority_3d_128 **alist);
 extern void kd_3d_128_print_nearest(kd_tree tree, __int128 x, __int128 y, __int128 z, int m);
 
