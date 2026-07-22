@@ -874,16 +874,6 @@ impl<T: PartialEq + Clone, C: Coord> Tree<T, C> {
             ));
         }
 
-        struct MmapNode<C> {
-            source_id: u64,
-            size: KdBox<C>,
-            lo_min_bound: C,
-            hi_max_bound: C,
-            other_bound: C,
-            left_child: i64,
-            right_child: i64,
-        }
-
         let mut vec: Vec<MmapNode<C>> = Vec::with_capacity(active_count as usize);
 
         fn serialize_node_recursive<T, C: Coord, F>(
@@ -975,6 +965,45 @@ impl<T: PartialEq + Clone, C: Coord> Tree<T, C> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct MmapNode<C> {
+    pub source_id: u64,
+    pub size: KdBox<C>,
+    pub lo_min_bound: C,
+    pub hi_max_bound: C,
+    pub other_bound: C,
+    pub left_child: i64,
+    pub right_child: i64,
+}
+
+pub fn get_mmap_bounds<C: Coord>(nodes: &[MmapNode<C>]) -> Option<KdBox<C>> {
+    if nodes.is_empty() {
+        return None;
+    }
+
+    let mut bounds: Option<KdBox<C>> = None;
+    const DIM: usize = 3; // For 3D
+
+    for node in nodes {
+        if node.source_id != 0 {
+            if let Some(ref mut b) = bounds {
+                for d in 0..DIM {
+                    if node.size[d] < b[d] {
+                        b[d] = node.size[d];
+                    }
+                    if node.size[d + DIM] > b[d + DIM] {
+                        b[d + DIM] = node.size[d + DIM];
+                    }
+                }
+            } else {
+                bounds = Some(node.size.clone());
+            }
+        }
+    }
+
+    bounds
+}
+
 pub fn get_serialized_bounds<C: Coord>(filename: &str) -> std::io::Result<Option<KdBox<C>>> {
     use std::fs::File;
     use std::io::{BufReader, Read};
@@ -982,7 +1011,7 @@ pub fn get_serialized_bounds<C: Coord>(filename: &str) -> std::io::Result<Option
     let file = File::open(filename)?;
     let mut reader = BufReader::new(file);
 
-    let mut bounds: Option<KdBox<C>> = None;
+    let mut nodes = Vec::new();
     const DIM: usize = 3; // For 3D
 
     loop {
@@ -999,30 +1028,30 @@ pub fn get_serialized_bounds<C: Coord>(filename: &str) -> std::io::Result<Option
             *val = C::read_from(&mut reader)?;
         }
 
-        for _ in 0..3 {
-            C::read_from(&mut reader)?;
-        }
+        let lo_min_bound = C::read_from(&mut reader)?;
+        let hi_max_bound = C::read_from(&mut reader)?;
+        let other_bound = C::read_from(&mut reader)?;
 
-        let mut child_buf = [0u8; 16];
-        reader.read_exact(&mut child_buf)?;
+        let mut left_buf = [0u8; 8];
+        reader.read_exact(&mut left_buf)?;
+        let left_child = i64::from_le_bytes(left_buf);
 
-        if source_id != 0 {
-            if let Some(ref mut b) = bounds {
-                for d in 0..DIM {
-                    if size[d] < b[d] {
-                        b[d] = size[d];
-                    }
-                    if size[d + DIM] > b[d + DIM] {
-                        b[d + DIM] = size[d + DIM];
-                    }
-                }
-            } else {
-                bounds = Some(size);
-            }
-        }
+        let mut right_buf = [0u8; 8];
+        reader.read_exact(&mut right_buf)?;
+        let right_child = i64::from_le_bytes(right_buf);
+
+        nodes.push(MmapNode {
+            source_id,
+            size,
+            lo_min_bound,
+            hi_max_bound,
+            other_bound,
+            left_child,
+            right_child,
+        });
     }
 
-    Ok(bounds)
+    Ok(get_mmap_bounds(&nodes))
 }
 
 pub fn intersect<C: Coord>(b1: &KdBox<C>, b2: &KdBox<C>) -> bool {

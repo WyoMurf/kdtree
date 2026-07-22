@@ -2316,7 +2316,7 @@ int kd_nearest(kd_tree tree, coord_t x, coord_t y, int m, kd_priority **alist)
 	Xq[KD_BOTTOM] = y;
 	Xq[KD_RIGHT] = x;
 	Xq[KD_TOP] = y;
-	*list = (KDPriority *)calloc(sizeof(struct kd_priority),m);
+	*list = (KDPriority *)calloc(sizeof(kd_priority),m);
 	for(i=0;i<m;i++)
 	{
 		(*list)[i].dist = 1.79769313486231470e+308;
@@ -2333,18 +2333,6 @@ int kd_nearest(kd_tree tree, coord_t x, coord_t y, int m, kd_priority **alist)
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/mman.h>
-
-#pragma pack(push, 1)
-typedef struct kd_mmap_node {
-    uint64_t source_id;
-    coord_t size[4];
-    coord_t lo_min_bound;
-    coord_t hi_max_bound;
-    coord_t other_bound;
-    int64_t left_child;
-    int64_t right_child;
-} kd_mmap_node;
-#pragma pack(pop)
 
 extern int ftruncate(int fd, off_t length);
 
@@ -2424,6 +2412,29 @@ int kd_get_bounds(kd_tree tree, kd_box bounds) {
 #include <fcntl.h>
 #include <unistd.h>
 
+int kd_get_mmap_bounds(const kd_mmap_node *nodes, size_t node_count, kd_box bounds) {
+    if (!nodes || node_count == 0) return KD_NOTFOUND;
+    
+    int first = 1;
+    for (size_t i = 0; i < node_count; i++) {
+        if (nodes[i].source_id != 0) {
+            if (first) {
+                for (int d = 0; d < 2; d++) {
+                    bounds[d] = nodes[i].size[d];
+                    bounds[d + 2] = nodes[i].size[d + 2];
+                }
+                first = 0;
+            } else {
+                for (int d = 0; d < 2; d++) {
+                    if (nodes[i].size[d] < bounds[d]) bounds[d] = nodes[i].size[d];
+                    if (nodes[i].size[d + 2] > bounds[d + 2]) bounds[d + 2] = nodes[i].size[d + 2];
+                }
+            }
+        }
+    }
+    return first ? KD_NOTFOUND : KD_OK;
+}
+
 int kd_get_serialized_bounds(const char *filename, kd_box bounds) {
     int fd = open(filename, O_RDONLY);
     if (fd == -1) return KD_NOTFOUND;
@@ -2446,26 +2457,10 @@ int kd_get_serialized_bounds(const char *filename, kd_box bounds) {
         return KD_NOTFOUND;
     }
     
-    int first = 1;
-    for (size_t i = 0; i < node_count; i++) {
-        if (nodes[i].source_id != 0) {
-            if (first) {
-                for (int d = 0; d < 2; d++) {
-                    bounds[d] = nodes[i].size[d];
-                    bounds[d + 2] = nodes[i].size[d + 2];
-                }
-                first = 0;
-            } else {
-                for (int d = 0; d < 2; d++) {
-                    if (nodes[i].size[d] < bounds[d]) bounds[d] = nodes[i].size[d];
-                    if (nodes[i].size[d + 2] > bounds[d + 2]) bounds[d + 2] = nodes[i].size[d + 2];
-                }
-            }
-        }
-    }
+    int ret = kd_get_mmap_bounds(nodes, node_count, bounds);
     
     munmap(nodes, sb.st_size);
     close(fd);
     
-    return first ? KD_NOTFOUND : KD_OK;
+    return ret;
 }

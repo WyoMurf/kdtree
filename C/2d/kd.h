@@ -50,6 +50,8 @@
  */
 #endif
 
+#include "../include/kdtree.h"
+
 /* 32-bit vs 64-bit vs 128-bit precision configuration */
 #if defined(COORD_128)
 typedef __int128 coord_t;
@@ -88,7 +90,9 @@ typedef int32_t coord_t;
 #define kd_serialize      kd_2d_128_serialize
 #define kd_get_bounds     kd_2d_128_get_bounds
 #define kd_get_serialized_bounds kd_2d_128_get_serialized_bounds
+#define kd_get_mmap_bounds kd_2d_128_get_mmap_bounds
 #define kd_mmap_node      kd_2d_128_mmap_node
+#define kd_priority       kd_priority_2d_128
 #define kd_pkg_name       kd_2d_128_pkg_name
 #elif defined(COORD_64)
 #define kd_create         kd_2d_64_create
@@ -118,7 +122,9 @@ typedef int32_t coord_t;
 #define kd_serialize      kd_2d_64_serialize
 #define kd_get_bounds     kd_2d_64_get_bounds
 #define kd_get_serialized_bounds kd_2d_64_get_serialized_bounds
+#define kd_get_mmap_bounds kd_2d_64_get_mmap_bounds
 #define kd_mmap_node      kd_2d_64_mmap_node
+#define kd_priority       kd_priority_2d_64
 #define kd_pkg_name       kd_2d_64_pkg_name
 #else
 #define kd_create         kd_2d_32_create
@@ -148,18 +154,13 @@ typedef int32_t coord_t;
 #define kd_serialize      kd_2d_32_serialize
 #define kd_get_bounds     kd_2d_32_get_bounds
 #define kd_get_serialized_bounds kd_2d_32_get_serialized_bounds
+#define kd_get_mmap_bounds kd_2d_32_get_mmap_bounds
 #define kd_mmap_node      kd_2d_32_mmap_node
+#define kd_priority       kd_priority_2d_32
 #define kd_pkg_name       kd_2d_32_pkg_name
 #endif
 
 extern char *kd_pkg_name;	/* For error handling */
-
-typedef struct kd_dummy_defn {
-    int dummy;
-} kd_dummy;
-
-typedef kd_dummy *kd_tree;
-typedef kd_dummy *kd_gen;
 
 #define KD_LEFT		0
 #define KD_BOTTOM	1
@@ -169,17 +170,6 @@ typedef kd_dummy *kd_gen;
 
 typedef coord_t kd_box[4];
 typedef coord_t *kd_box_r;
-
-typedef int kd_status;
-typedef char *kd_generic;
-
-/* Return values */
-
-#define KD_OK		1
-#define KD_NOMORE	2
-
-#define KD_NOTIMPL	-3
-#define KD_NOTFOUND	-4 
 /* Fatal Faults */
 #define KDF_M		0	/* Memory fault    */
 #define KDF_ZEROID	1	/* Insert zero     */
@@ -189,12 +179,6 @@ typedef char *kd_generic;
 #define KDF_UNKNOWN	99	/* Unknown error   */
 
 #define KD_DISC(lev) (lev%4)
-
-typedef struct kd_priority
-{
-	double dist;
-	kd_generic elem;
-} kd_priority;
 
 extern char *kd_err_string(void);
   /* Returns a textual description of a k-d error */
@@ -243,5 +227,6 @@ extern void kd_print_nearest (kd_tree tree, coord_t x, coord_t y, int m);
 extern int kd_serialize(kd_tree tree, const char *filename);
 extern int kd_get_bounds(kd_tree tree, kd_box bounds);
 extern int kd_get_serialized_bounds(const char *filename, kd_box bounds);
+extern int kd_get_mmap_bounds(const kd_mmap_node *nodes, size_t node_count, kd_box bounds);
 
 #endif /* KD_HEADER */

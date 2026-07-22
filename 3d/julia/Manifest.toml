@@ -2,19 +2,9 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "9eb9a767870594df01d6721a9b0d48650bec39df"
+project_hash = "d08f7b4a13259cfd2e119cfe7db158aba78709b7"
 
 [[deps.KDTree3D]]
-deps = ["Random"]
 path = "."
 uuid = "c5f7c4d3-8c5e-6f5f-0e3f-34567890bcde"
 version = "1.0.0"
-
-[[deps.Random]]
-deps = ["SHA"]
-uuid = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
-version = "1.11.0"
-
-[[deps.SHA]]
-uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
-version = "0.7.0"

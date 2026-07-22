@@ -1149,12 +1149,18 @@ void kd_print_nearest(kd_tree tree, coord_t x, coord_t y, coord_t z, int m)
 	//			list[i].elem->size[KD_TOP],
 	//			list[i].elem->size[KD_CEIL]);
 		fprintf(stderr,"Nearest Neighbor: dist to center: %g units. elem=%lx.\n",
-				list[i].dist, (unsigned long)list[i].elem);
-	}
-	free(list);
-}
+		list[i].dist, (unsigned long)list[i].elem);
+		}
+		free(list);
+		}
 
-#define PREVDISC(x) (x==0?5:x-1)
+		typedef struct KDPpriority
+		{
+		double dist;
+		KDElem *elem;
+		} KDPriority;
+
+		#define PREVDISC(x) (x==0?5:x-1)
 /*
  * Returns the SQUARED edge-to-edge distance from query point Xq to the
  * bounding box of elem.  Using squared distance throughout the nearest-
@@ -1193,7 +1199,7 @@ static double coord_dist(coord_t x, coord_t y)
 }
 
 
-static int bounds_overlap_ball(kd_box Xq, kd_box Bp, kd_box Bn, int m, kd_priority *list)
+static int bounds_overlap_ball(kd_box Xq, kd_box Bp, kd_box Bn, int m, KDPriority *list)
 {
 	int d1;
 	double sum;
@@ -1248,7 +1254,7 @@ static int bounds_overlap_ball(kd_box Xq, kd_box Bp, kd_box Bn, int m, kd_priori
     (gen)->stk[(gen)->top_index].Bp[5] = Bxp[5];                             \
     (gen)->top_index += 1
 
-static void add_priority(int m, kd_priority *P, kd_box Xq, KDElem *elem);
+static void add_priority(int m, KDPriority *P, kd_box Xq, KDElem *elem);
 
 kd_gen kd_start(kd_tree theTree, kd_box area)
 // kd_tree theTree;             /* Tree to generate from */
@@ -1394,7 +1400,7 @@ int kd_count(kd_tree tree)
 }
 
 
-static int  kd_neighbor(KDElem *node, kd_box Xq, int m, kd_priority *list, kd_box Bp, kd_box Bn)
+static int  kd_neighbor(KDElem *node, kd_box Xq, int m, KDPriority *list, kd_box Bp, kd_box Bn)
 {
     KDState *realGen;
     coord_t p;
@@ -1584,7 +1590,7 @@ static int  kd_neighbor(KDElem *node, kd_box Xq, int m, kd_priority *list, kd_bo
 	return kd_data_tries;
 }
 
-static void add_priority(int m, kd_priority *P, kd_box Xq, KDElem *elem)
+static void add_priority(int m, KDPriority *P, kd_box Xq, KDElem *elem)
 {
         int x;
         double d;
@@ -1610,14 +1616,14 @@ int kd_nearest(kd_tree tree, coord_t x, coord_t y, coord_t z, int m, kd_priority
 	kd_box Bp,Bn,Xq;
 	int i;
 	KDTree *realTree = (KDTree *) tree;
-	kd_priority **list = (kd_priority **)alist;
+	KDPriority **list = (KDPriority **)alist;
 	Xq[KD_LEFT] = x;
 	Xq[KD_BOTTOM] = y;
 	Xq[KD_FLOOR] = z;
 	Xq[KD_RIGHT] = x;
 	Xq[KD_TOP] = y;
 	Xq[KD_CEIL] = z;
-	*list = (kd_priority *)calloc(sizeof(struct kd_priority),m);
+	*list = (KDPriority *)calloc(sizeof(kd_priority),m);
 	for(i=0;i<m;i++)
 	{
 		(*list)[i].dist = 1.79769313486231470e+308;
@@ -2274,18 +2280,6 @@ static void kd_push(KDState *gen, KDElem *elem, short disc)
 #include <unistd.h>
 #include <sys/mman.h>
 
-#pragma pack(push, 1)
-typedef struct kd_mmap_node {
-    uint64_t source_id;
-    coord_t size[6];
-    coord_t lo_min_bound;
-    coord_t hi_max_bound;
-    coord_t other_bound;
-    int64_t left_child;
-    int64_t right_child;
-} kd_mmap_node;
-#pragma pack(pop)
-
 extern int ftruncate(int fd, off_t length);
 
 static int64_t kd_serialize_node(KDElem *node, kd_mmap_node *array, int64_t *current_idx) {
@@ -2364,6 +2358,29 @@ int kd_get_bounds(kd_tree tree, kd_box bounds) {
 #include <fcntl.h>
 #include <unistd.h>
 
+int kd_get_mmap_bounds(const kd_mmap_node *nodes, size_t node_count, kd_box bounds) {
+    if (!nodes || node_count == 0) return KD_NOTFOUND;
+    
+    int first = 1;
+    for (size_t i = 0; i < node_count; i++) {
+        if (nodes[i].source_id != 0) {
+            if (first) {
+                for (int d = 0; d < 3; d++) {
+                    bounds[d] = nodes[i].size[d];
+                    bounds[d + 3] = nodes[i].size[d + 3];
+                }
+                first = 0;
+            } else {
+                for (int d = 0; d < 3; d++) {
+                    if (nodes[i].size[d] < bounds[d]) bounds[d] = nodes[i].size[d];
+                    if (nodes[i].size[d + 3] > bounds[d + 3]) bounds[d + 3] = nodes[i].size[d + 3];
+                }
+            }
+        }
+    }
+    return first ? KD_NOTFOUND : KD_OK;
+}
+
 int kd_get_serialized_bounds(const char *filename, kd_box bounds) {
     int fd = open(filename, O_RDONLY);
     if (fd == -1) return KD_NOTFOUND;
@@ -2386,26 +2403,10 @@ int kd_get_serialized_bounds(const char *filename, kd_box bounds) {
         return KD_NOTFOUND;
     }
     
-    int first = 1;
-    for (size_t i = 0; i < node_count; i++) {
-        if (nodes[i].source_id != 0) {
-            if (first) {
-                for (int d = 0; d < 3; d++) {
-                    bounds[d] = nodes[i].size[d];
-                    bounds[d + 3] = nodes[i].size[d + 3];
-                }
-                first = 0;
-            } else {
-                for (int d = 0; d < 3; d++) {
-                    if (nodes[i].size[d] < bounds[d]) bounds[d] = nodes[i].size[d];
-                    if (nodes[i].size[d + 3] > bounds[d + 3]) bounds[d + 3] = nodes[i].size[d + 3];
-                }
-            }
-        }
-    }
+    int ret = kd_get_mmap_bounds(nodes, node_count, bounds);
     
     munmap(nodes, sb.st_size);
     close(fd);
     
-    return first ? KD_NOTFOUND : KD_OK;
+    return ret;
 }

@@ -7,18 +7,6 @@
 #include <assert.h>
 #include "kd.h"
 
-#pragma pack(push, 1)
-typedef struct kd_mmap_node {
-    uint64_t source_id;
-    coord_t size[6];
-    coord_t lo_min_bound;
-    coord_t hi_max_bound;
-    coord_t other_bound;
-    int64_t left_child;
-    int64_t right_child;
-} kd_mmap_node;
-#pragma pack(pop)
-
 typedef struct {
     int id;
     coord_t x, y, z;

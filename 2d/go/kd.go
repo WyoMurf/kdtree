@@ -1059,6 +1059,39 @@ func sizeofT[T Coord]() int {
 	}
 }
 
+// GetMmapBounds calculates the bounding box directly from an array of MmapNode
+func GetMmapBounds[T Coord](nodes []MmapNode[T]) (Box[T], error) {
+	var bounds Box[T]
+	if len(nodes) == 0 {
+		return bounds, fmt.Errorf("Nodes array is empty")
+	}
+
+	dim := len(bounds) / 2
+	first := true
+	for i := range nodes {
+		if nodes[i].SourceID != 0 {
+			if first {
+				bounds = nodes[i].Size
+				first = false
+			} else {
+				for d := 0; d < dim; d++ {
+					if nodes[i].Size[d] < bounds[d] {
+						bounds[d] = nodes[i].Size[d]
+					}
+					if nodes[i].Size[d+dim] > bounds[d+dim] {
+						bounds[d+dim] = nodes[i].Size[d+dim]
+					}
+				}
+			}
+		}
+	}
+
+	if first {
+		return bounds, fmt.Errorf("No active items in nodes array")
+	}
+	return bounds, nil
+}
+
 // GetSerializedBounds calculates the bounding box directly from a serialized .kdtree file
 func GetSerializedBounds[T Coord](filename string) (Box[T], error) {
 	var bounds Box[T]
@@ -1085,14 +1118,14 @@ func GetSerializedBounds[T Coord](filename string) (Box[T], error) {
 		return bounds, fmt.Errorf("File is empty")
 	}
 
-	first := true
+	nodes := make([]MmapNode[T], nodeCount)
 	for i := int64(0); i < nodeCount; i++ {
 		var sourceID uint64
 		if err := binary.Read(file, binary.LittleEndian, &sourceID); err != nil {
 			return bounds, err
 		}
 
-		box := make([]T, 2*dim)
+		var size Box[T]
 		for j := 0; j < 2*dim; j++ {
 			var val T
 			if tSize == 4 {
@@ -1104,35 +1137,40 @@ func GetSerializedBounds[T Coord](filename string) (Box[T], error) {
 				binary.Read(file, binary.LittleEndian, &val64)
 				val = T(val64)
 			}
-			box[j] = val
+			size[j] = val
 		}
 
-		skipBytes := int64(3*tSize + 16)
-		if _, err := file.Seek(skipBytes, 1); err != nil {
+		var loMin, hiMax, other T
+		if tSize == 4 {
+			var val32 int32
+			binary.Read(file, binary.LittleEndian, &val32); loMin = T(val32)
+			binary.Read(file, binary.LittleEndian, &val32); hiMax = T(val32)
+			binary.Read(file, binary.LittleEndian, &val32); other = T(val32)
+		} else {
+			var val64 int64
+			binary.Read(file, binary.LittleEndian, &val64); loMin = T(val64)
+			binary.Read(file, binary.LittleEndian, &val64); hiMax = T(val64)
+			binary.Read(file, binary.LittleEndian, &val64); other = T(val64)
+		}
+
+		var left, right int64
+		if err := binary.Read(file, binary.LittleEndian, &left); err != nil {
+			return bounds, err
+		}
+		if err := binary.Read(file, binary.LittleEndian, &right); err != nil {
 			return bounds, err
 		}
 
-		if sourceID != 0 {
-			if first {
-				for j := 0; j < 2*dim; j++ {
-					bounds[j] = box[j]
-				}
-				first = false
-			} else {
-				for d := 0; d < dim; d++ {
-					if box[d] < bounds[d] {
-						bounds[d] = box[d]
-					}
-					if box[d+dim] > bounds[d+dim] {
-						bounds[d+dim] = box[d+dim]
-					}
-				}
-			}
+		nodes[i] = MmapNode[T]{
+			SourceID:   sourceID,
+			Size:       size,
+			LoMinBound: loMin,
+			HiMaxBound: hiMax,
+			OtherBound: other,
+			LeftChild:  left,
+			RightChild: right,
 		}
 	}
 
-	if first {
-		return bounds, fmt.Errorf("No active items in serialized file")
-	}
-	return bounds, nil
+	return GetMmapBounds(nodes)
 }

@@ -2,6 +2,7 @@
 #define KDTREE_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,8 +25,20 @@ typedef kd_dummy *kd_gen;
 #define KD_NOTFOUND -4 
 
 /* 2D 32-bit API */
+#pragma pack(push, 1)
+typedef struct {
+    uint64_t source_id;
+    int32_t size[4];
+    int32_t lo_min_bound;
+    int32_t hi_max_bound;
+    int32_t other_bound;
+    int64_t left_child;
+    int64_t right_child;
+} kd_2d_32_mmap_node;
+#pragma pack(pop)
+
 typedef int32_t kd_2d_32_box[4];
-typedef struct { double dist; kd_generic elem; } kd_priority_2d_32;
+typedef struct kd_priority_2d_32 { double dist; kd_generic elem; } kd_priority_2d_32;
 
 extern kd_tree kd_2d_32_create(void);
 extern kd_tree kd_2d_32_build(int (*itemfunc)(kd_generic arg, kd_generic *val, kd_2d_32_box size), kd_generic );
@@ -44,12 +57,25 @@ extern kd_tree kd_2d_32_rebuild(kd_tree);
 extern int kd_2d_32_serialize(kd_tree tree, const char *filename);
 extern int kd_2d_32_get_bounds(kd_tree tree, kd_2d_32_box bounds);
 extern int kd_2d_32_get_serialized_bounds(const char *filename, kd_2d_32_box bounds);
+extern int kd_2d_32_get_mmap_bounds(const kd_2d_32_mmap_node *nodes, size_t node_count, kd_2d_32_box bounds);
 extern int kd_2d_32_nearest(kd_tree tree, int32_t x, int32_t y, int m, kd_priority_2d_32 **alist);
 extern void kd_2d_32_print_nearest(kd_tree tree, int32_t x, int32_t y, int m);
 
 /* 2D 64-bit API */
+#pragma pack(push, 1)
+typedef struct {
+    uint64_t source_id;
+    int64_t size[4];
+    int64_t lo_min_bound;
+    int64_t hi_max_bound;
+    int64_t other_bound;
+    int64_t left_child;
+    int64_t right_child;
+} kd_2d_64_mmap_node;
+#pragma pack(pop)
+
 typedef int64_t kd_2d_64_box[4];
-typedef struct { double dist; kd_generic elem; } kd_priority_2d_64;
+typedef struct kd_priority_2d_64 { double dist; kd_generic elem; } kd_priority_2d_64;
 
 extern kd_tree kd_2d_64_create(void);
 extern kd_tree kd_2d_64_build(int (*itemfunc)(kd_generic arg, kd_generic *val, kd_2d_64_box size), kd_generic );
@@ -68,12 +94,25 @@ extern kd_tree kd_2d_64_rebuild(kd_tree);
 extern int kd_2d_64_serialize(kd_tree tree, const char *filename);
 extern int kd_2d_64_get_bounds(kd_tree tree, kd_2d_64_box bounds);
 extern int kd_2d_64_get_serialized_bounds(const char *filename, kd_2d_64_box bounds);
+extern int kd_2d_64_get_mmap_bounds(const kd_2d_64_mmap_node *nodes, size_t node_count, kd_2d_64_box bounds);
 extern int kd_2d_64_nearest(kd_tree tree, int64_t x, int64_t y, int m, kd_priority_2d_64 **alist);
 extern void kd_2d_64_print_nearest(kd_tree tree, int64_t x, int64_t y, int m);
 
 /* 2D 128-bit API */
+#pragma pack(push, 1)
+typedef struct {
+    uint64_t source_id;
+    __int128 size[4];
+    __int128 lo_min_bound;
+    __int128 hi_max_bound;
+    __int128 other_bound;
+    int64_t left_child;
+    int64_t right_child;
+} kd_2d_128_mmap_node;
+#pragma pack(pop)
+
 typedef __int128 kd_2d_128_box[4];
-typedef struct { double dist; kd_generic elem; } kd_priority_2d_128;
+typedef struct kd_priority_2d_128 { double dist; kd_generic elem; } kd_priority_2d_128;
 
 extern kd_tree kd_2d_128_create(void);
 extern kd_tree kd_2d_128_build(int (*itemfunc)(kd_generic arg, kd_generic *val, kd_2d_128_box size), kd_generic );
@@ -92,10 +131,23 @@ extern kd_tree kd_2d_128_rebuild(kd_tree);
 extern int kd_2d_128_serialize(kd_tree tree, const char *filename);
 extern int kd_2d_128_get_bounds(kd_tree tree, kd_2d_128_box bounds);
 extern int kd_2d_128_get_serialized_bounds(const char *filename, kd_2d_128_box bounds);
+extern int kd_2d_128_get_mmap_bounds(const kd_2d_128_mmap_node *nodes, size_t node_count, kd_2d_128_box bounds);
 extern int kd_2d_128_nearest(kd_tree tree, __int128 x, __int128 y, int m, kd_priority_2d_128 **alist);
 extern void kd_2d_128_print_nearest(kd_tree tree, __int128 x, __int128 y, int m);
 
 /* 3D 32-bit API */
+#pragma pack(push, 1)
+typedef struct {
+    uint64_t source_id;
+    int32_t size[6];
+    int32_t lo_min_bound;
+    int32_t hi_max_bound;
+    int32_t other_bound;
+    int64_t left_child;
+    int64_t right_child;
+} kd_3d_32_mmap_node;
+#pragma pack(pop)
+
 typedef int32_t kd_3d_32_box[6];
 typedef struct kd_priority_3d_32 { double dist; void *elem; } kd_priority_3d_32;
 
@@ -116,10 +168,23 @@ extern kd_tree kd_3d_32_rebuild(kd_tree);
 extern int kd_3d_32_serialize(kd_tree tree, const char *filename);
 extern int kd_3d_32_get_bounds(kd_tree tree, kd_3d_32_box bounds);
 extern int kd_3d_32_get_serialized_bounds(const char *filename, kd_3d_32_box bounds);
+extern int kd_3d_32_get_mmap_bounds(const kd_3d_32_mmap_node *nodes, size_t node_count, kd_3d_32_box bounds);
 extern int kd_3d_32_nearest(kd_tree tree, int32_t x, int32_t y, int32_t z, int m, kd_priority_3d_32 **alist);
 extern void kd_3d_32_print_nearest(kd_tree tree, int32_t x, int32_t y, int32_t z, int m);
 
 /* 3D 64-bit API */
+#pragma pack(push, 1)
+typedef struct {
+    uint64_t source_id;
+    int64_t size[6];
+    int64_t lo_min_bound;
+    int64_t hi_max_bound;
+    int64_t other_bound;
+    int64_t left_child;
+    int64_t right_child;
+} kd_3d_64_mmap_node;
+#pragma pack(pop)
+
 typedef int64_t kd_3d_64_box[6];
 typedef struct kd_priority_3d_64 { double dist; void *elem; } kd_priority_3d_64;
 
@@ -140,10 +205,23 @@ extern kd_tree kd_3d_64_rebuild(kd_tree);
 extern int kd_3d_64_serialize(kd_tree tree, const char *filename);
 extern int kd_3d_64_get_bounds(kd_tree tree, kd_3d_64_box bounds);
 extern int kd_3d_64_get_serialized_bounds(const char *filename, kd_3d_64_box bounds);
+extern int kd_3d_64_get_mmap_bounds(const kd_3d_64_mmap_node *nodes, size_t node_count, kd_3d_64_box bounds);
 extern int kd_3d_64_nearest(kd_tree tree, int64_t x, int64_t y, int64_t z, int m, kd_priority_3d_64 **alist);
 extern void kd_3d_64_print_nearest(kd_tree tree, int64_t x, int64_t y, int64_t z, int m);
 
 /* 3D 128-bit API */
+#pragma pack(push, 1)
+typedef struct {
+    uint64_t source_id;
+    __int128 size[6];
+    __int128 lo_min_bound;
+    __int128 hi_max_bound;
+    __int128 other_bound;
+    int64_t left_child;
+    int64_t right_child;
+} kd_3d_128_mmap_node;
+#pragma pack(pop)
+
 typedef __int128 kd_3d_128_box[6];
 typedef struct kd_priority_3d_128 { double dist; void *elem; } kd_priority_3d_128;
 
@@ -164,6 +242,7 @@ extern kd_tree kd_3d_128_rebuild(kd_tree);
 extern int kd_3d_128_serialize(kd_tree tree, const char *filename);
 extern int kd_3d_128_get_bounds(kd_tree tree, kd_3d_128_box bounds);
 extern int kd_3d_128_get_serialized_bounds(const char *filename, kd_3d_128_box bounds);
+extern int kd_3d_128_get_mmap_bounds(const kd_3d_128_mmap_node *nodes, size_t node_count, kd_3d_128_box bounds);
 extern int kd_3d_128_nearest(kd_tree tree, __int128 x, __int128 y, __int128 z, int m, kd_priority_3d_128 **alist);
 extern void kd_3d_128_print_nearest(kd_tree tree, __int128 x, __int128 y, __int128 z, int m);
 

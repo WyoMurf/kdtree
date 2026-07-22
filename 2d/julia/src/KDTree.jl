@@ -1,12 +1,22 @@
 module KDTree
 
-export serialize, get_bounds, get_serialized_bounds, Tree, Box, insert!, count_items, is_member, hard_delete!, really_delete!, badness, nearest, Priority, search, LEFT, BOTTOM, RIGHT, TOP
+export serialize, get_bounds, get_serialized_bounds, get_mmap_bounds, MmapNode, Tree, Box, insert!, count_items, is_member, hard_delete!, really_delete!, badness, nearest, Priority, search, LEFT, BOTTOM, RIGHT, TOP
 
 const Box{C<:Integer} = NTuple{4, C}
 const LEFT = 1
 const BOTTOM = 2
 const RIGHT = 3
 const TOP = 4
+
+struct MmapNode{N, C<:Integer}
+    source_id::UInt64
+    size::NTuple{N, C}
+    lo_min_bound::C
+    hi_max_bound::C
+    other_bound::C
+    left_child::Int64
+    right_child::Int64
+end
 
 mutable struct Node{T, C<:Integer}
     item::Union{T, Nothing}
@@ -790,6 +800,35 @@ function get_bounds(tree::Tree{T, C})::Union{Box{C}, Nothing} where {T, C<:Integ
     return Box{C}((bounds...,))
 end
 
+function get_mmap_bounds(nodes::Vector{MmapNode{N, C}}, dim::Int=2)::Union{Box{C}, Nothing} where {N, C<:Integer}
+    if isempty(nodes)
+        return nothing
+    end
+    
+    bounds = nothing
+    for node in nodes
+        if node.source_id != 0
+            if bounds === nothing
+                bounds = [node.size...]
+            else
+                for d in 1:dim
+                    if node.size[d] < bounds[d]
+                        bounds[d] = node.size[d]
+                    end
+                    if node.size[d + dim] > bounds[d + dim]
+                        bounds[d + dim] = node.size[d + dim]
+                    end
+                end
+            end
+        end
+    end
+    
+    if bounds === nothing
+        return nothing
+    end
+    return NTuple{2*dim, C}((bounds...,))
+end
+
 function get_serialized_bounds(filename::String, CType::Type{C}, dim::Int=2)::Union{Box{C}, Nothing} where {C<:Integer}
     if !isfile(filename)
         return nothing
@@ -802,39 +841,35 @@ function get_serialized_bounds(filename::String, CType::Type{C}, dim::Int=2)::Un
     end
     
     node_count = file_size ÷ node_size
-    bounds = nothing
+    nodes = Vector{MmapNode{2*dim, C}}(undef, node_count)
     
     io = open(filename, "r")
     try
         for i in 1:node_count
             seek(io, (i - 1) * node_size)
             source_id = read(io, UInt64)
+            size_tup = NTuple{2*dim, C}(Tuple(read(io, CType) for _ in 1:(2*dim)))
+            lo_min_bound = read(io, CType)
+            hi_max_bound = read(io, CType)
+            other_bound = read(io, CType)
+            left_child = read(io, Int64)
+            right_child = read(io, Int64)
             
-            size_vec = [read(io, CType) for _ in 1:(2*dim)]
-            
-            if source_id != 0
-                if bounds === nothing
-                    bounds = copy(size_vec)
-                else
-                    for d in 1:dim
-                        if size_vec[d] < bounds[d]
-                            bounds[d] = size_vec[d]
-                        end
-                        if size_vec[d + dim] > bounds[d + dim]
-                            bounds[d + dim] = size_vec[d + dim]
-                        end
-                    end
-                end
-            end
+            nodes[i] = MmapNode{2*dim, C}(
+                source_id,
+                size_tup,
+                lo_min_bound,
+                hi_max_bound,
+                other_bound,
+                left_child,
+                right_child
+            )
         end
     finally
         close(io)
     end
     
-    if bounds === nothing
-        return nothing
-    end
-    return NTuple{2*dim, C}((bounds...,))
+    return get_mmap_bounds(nodes, dim)
 end
 
 end

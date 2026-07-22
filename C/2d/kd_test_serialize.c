@@ -8,18 +8,6 @@
 #include "kd.h"
 
 extern int kd_serialize(kd_tree tree, const char *filename);
-#pragma pack(push, 1)
-typedef struct kd_mmap_node {
-    uint64_t source_id;
-    coord_t size[4];
-    coord_t lo_min_bound;
-    coord_t hi_max_bound;
-    coord_t other_bound;
-    int64_t left_child;
-    int64_t right_child;
-} kd_mmap_node;
-#pragma pack(pop)
-
 
 // We define a simple item that matches our ID
 typedef struct {
