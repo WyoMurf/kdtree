@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include <math.h>
 #include <fitsio.h>
 #include "kdtree.h"
@@ -13,6 +14,7 @@ typedef struct {
     int64_t source_id;
     int64_t x, y, z;
     int64_t radius; // Physical stellar radius in scaled coordinate space (1 Rsun = 22.56 units)
+    double parallax; // Kept to segment stars by parallax ranges
 } StarCoord;
 
 int item_func(kd_generic arg, kd_generic *val, kd_3d_64_box size) {
@@ -35,6 +37,50 @@ int item_func(kd_generic arg, kd_generic *val, kd_3d_64_box size) {
     
     (*stars)++;
     return KD_OK;
+}
+
+typedef struct {
+    double min_plx;
+    double max_plx;
+} ParallaxRange;
+
+#define NUM_SEGMENTS 10
+const ParallaxRange PARALLAX_RANGES[NUM_SEGMENTS] = {
+    {0.0, 0.5},
+    {0.5, 1.0},
+    {1.0, 1.5},
+    {1.5, 2.0},
+    {2.0, 3.0},
+    {3.0, 4.0},
+    {4.0, 6.0},
+    {6.0, 10.0},
+    {10.0, 20.0},
+    {20.0, 1000000.0} // Covers any remaining high parallax
+};
+
+void write_bb_file(const char *kdtree_filename, kd_3d_64_box bounds) {
+    char bb_filename[512];
+    size_t len = strlen(kdtree_filename);
+    if (len > 7 && strcmp(kdtree_filename + len - 7, ".kdtree") == 0) {
+        memcpy(bb_filename, kdtree_filename, len - 7);
+        bb_filename[len - 7] = '\0';
+        strcat(bb_filename, ".bb");
+    } else {
+        strcpy(bb_filename, kdtree_filename);
+        strcat(bb_filename, ".bb");
+    }
+
+    FILE *f = fopen(bb_filename, "w");
+    if (!f) {
+        fprintf(stderr, "Error: Could not open bounding box file %s for writing\n", bb_filename);
+        return;
+    }
+    // Write space-separated bounding box values on the first line
+    fprintf(f, "%lld %lld %lld %lld %lld %lld\n",
+            (long long)bounds[0], (long long)bounds[1], (long long)bounds[2],
+            (long long)bounds[3], (long long)bounds[4], (long long)bounds[5]);
+    fclose(f);
+    printf("Written bounding box file: %s\n", bb_filename);
 }
 
 int main(int argc, char *argv[]) {
@@ -63,6 +109,7 @@ int main(int argc, char *argv[]) {
     
     if (status) {
         fits_report_error(stderr, status);
+        free(stars);
         return 1;
     }
     
@@ -147,18 +194,85 @@ int main(int argc, char *argv[]) {
         stars[valid_count].y = (int64_t)(y * SCALE_FACTOR);
         stars[valid_count].z = (int64_t)(z * SCALE_FACTOR);
         stars[valid_count].radius = r_scaled;
+        stars[valid_count].parallax = plxs[i];
         valid_count++;
     }
     
     stars[valid_count].source_id = 0; // sentinel
     
     printf("Loaded %ld stars with valid parallaxes.\n", valid_count);
-    printf("Building KD-Tree...\n");
+    
+    // --- PART 1: Build and Serialize Original Full Tree ---
+    printf("Building Full KD-Tree...\n");
     StarCoord *ptr = stars;
     kd_tree tree = kd_3d_64_build(item_func, (kd_generic)&ptr);
     
-    printf("Serializing KD-Tree to %s...\n", argv[2]);
+    printf("Serializing Full KD-Tree to %s...\n", argv[2]);
     kd_3d_64_serialize(tree, argv[2]);
+    
+    // Write full tree bounding box
+    kd_3d_64_box full_bounds;
+    if (kd_3d_64_get_bounds(tree, full_bounds) == KD_OK) {
+        write_bb_file(argv[2], full_bounds);
+    } else {
+        printf("Warning: Could not compute bounding box for full tree.\n");
+    }
+    kd_3d_64_destroy(tree, NULL);
+    
+    // --- PART 2: Build and Serialize 10 Subtrees by Parallax ---
+    printf("Segmenting stars into %d parallax-ranged subtrees...\n", NUM_SEGMENTS);
+    for (int s = 0; s < NUM_SEGMENTS; s++) {
+        long seg_count = 0;
+        for (long i = 0; i < valid_count; i++) {
+            if (stars[i].parallax >= PARALLAX_RANGES[s].min_plx && stars[i].parallax < PARALLAX_RANGES[s].max_plx) {
+                seg_count++;
+            }
+        }
+        
+        if (seg_count > 0) {
+            StarCoord *seg_stars = malloc((seg_count + 1) * sizeof(StarCoord));
+            long idx = 0;
+            for (long i = 0; i < valid_count; i++) {
+                if (stars[i].parallax >= PARALLAX_RANGES[s].min_plx && stars[i].parallax < PARALLAX_RANGES[s].max_plx) {
+                    seg_stars[idx] = stars[i];
+                    idx++;
+                }
+            }
+            seg_stars[idx].source_id = 0; // sentinel
+            
+            char subtree_filename[512];
+            size_t len = strlen(argv[2]);
+            if (len > 7 && strcmp(argv[2] + len - 7, ".kdtree") == 0) {
+                memcpy(subtree_filename, argv[2], len - 7);
+                subtree_filename[len - 7] = '\0';
+                sprintf(subtree_filename + len - 7, "-%d.kdtree", s);
+            } else {
+                sprintf(subtree_filename, "%s-%d.kdtree", argv[2], s);
+            }
+            
+            printf("Building subtree segment %d with %ld stars (%g to %g mas)...\n", 
+                   s, seg_count, PARALLAX_RANGES[s].min_plx, PARALLAX_RANGES[s].max_plx);
+            
+            StarCoord *seg_ptr = seg_stars;
+            kd_tree seg_tree = kd_3d_64_build(item_func, (kd_generic)&seg_ptr);
+            
+            printf("Serializing subtree to %s...\n", subtree_filename);
+            kd_3d_64_serialize(seg_tree, subtree_filename);
+            
+            kd_3d_64_box seg_bounds;
+            if (kd_3d_64_get_bounds(seg_tree, seg_bounds) == KD_OK) {
+                write_bb_file(subtree_filename, seg_bounds);
+            } else {
+                printf("Warning: Could not compute bounding box for subtree %d.\n", s);
+            }
+            
+            kd_3d_64_destroy(seg_tree, NULL);
+            free(seg_stars);
+        } else {
+            printf("Subtree segment %d has 0 stars (%g to %g mas), skipping.\n", 
+                   s, PARALLAX_RANGES[s].min_plx, PARALLAX_RANGES[s].max_plx);
+        }
+    }
     
     free(ids); free(ras); free(decs); free(plxs); free(stars);
     free(g_mags); free(bp_mags); free(rp_mags);
