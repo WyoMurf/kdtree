@@ -1118,6 +1118,35 @@ func GetSerializedBounds[T Coord](filename string) (Box[T], error) {
 		return bounds, fmt.Errorf("File is empty")
 	}
 
+	// Try O(1) fast retrieval: Seek to the last record to check for our sentinel node
+	if _, err := file.Seek(-recordSize, 2); err == nil {
+		var sourceID uint64
+		if err := binary.Read(file, binary.LittleEndian, &sourceID); err == nil {
+			if sourceID == ^uint64(0) {
+				var size Box[T]
+				for j := 0; j < 2*dim; j++ {
+					var val T
+					if tSize == 4 {
+						var val32 int32
+						binary.Read(file, binary.LittleEndian, &val32)
+						val = T(val32)
+					} else {
+						var val64 int64
+						binary.Read(file, binary.LittleEndian, &val64)
+						val = T(val64)
+					}
+					size[j] = val
+				}
+				return size, nil
+			}
+		}
+	}
+
+	// Reset file offset to beginning for O(N) fallback scan
+	if _, err := file.Seek(0, 0); err != nil {
+		return bounds, err
+	}
+
 	nodes := make([]MmapNode[T], nodeCount)
 	for i := int64(0); i < nodeCount; i++ {
 		var sourceID uint64

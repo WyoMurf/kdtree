@@ -2364,7 +2364,8 @@ int kd_serialize(kd_tree tree, const char *filename) {
     int fd = open(filename, O_RDWR | O_CREAT | O_TRUNC, 0666);
     if (fd == -1) return -1;
     
-    size_t file_size = count * sizeof(kd_mmap_node);
+    // We allocate space for count + 1 nodes to include the sentinel node at the end
+    size_t file_size = (count + 1) * sizeof(kd_mmap_node);
     if (ftruncate(fd, file_size) == -1) { close(fd); return -1; }
     
     kd_mmap_node *array = mmap(NULL, file_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
@@ -2373,37 +2374,28 @@ int kd_serialize(kd_tree tree, const char *filename) {
     int64_t current_idx = 0;
     kd_serialize_node(realTree->tree, array, &current_idx);
     
+    // Append sentinel node at index current_idx (which is equal to count)
+    array[current_idx].source_id = UINT64_MAX;
+    for (int d = 0; d < 4; d++) {
+        array[current_idx].size[d] = realTree->extent[d];
+    }
+    
     msync(array, file_size, MS_SYNC);
     munmap(array, file_size);
     close(fd);
     return 0;
 }
 
-static void get_bounds_recursive(KDElem *node, coord_t *bounds) {
-    if (!node || node->item == NULL) return;
-    
-    for (int i = 0; i < 2; i++) {
-        if (node->size[i] < bounds[i]) bounds[i] = node->size[i];
-        if (node->size[i + 2] > bounds[i + 2]) bounds[i + 2] = node->size[i + 2];
-    }
-    
-    get_bounds_recursive(node->sons[0], bounds);
-    get_bounds_recursive(node->sons[1], bounds);
-}
-
 int kd_get_bounds(kd_tree tree, kd_box bounds) {
     if (!tree) return KD_NOTFOUND;
     KDTree *realTree = (KDTree *)tree;
-    if (!realTree->tree || realTree->tree->item == NULL) {
+    if (realTree->item_count - realTree->dead_count <= 0) {
         return KD_NOTFOUND;
     }
     
-    for (int i = 0; i < 2; i++) {
-        bounds[i] = realTree->tree->size[i];
-        bounds[i + 2] = realTree->tree->size[i + 2];
+    for (int i = 0; i < 4; i++) {
+        bounds[i] = realTree->extent[i];
     }
-    
-    get_bounds_recursive(realTree->tree, bounds);
     return KD_OK;
 }
 
@@ -2417,7 +2409,7 @@ int kd_get_mmap_bounds(const kd_mmap_node *nodes, size_t node_count, kd_box boun
     
     int first = 1;
     for (size_t i = 0; i < node_count; i++) {
-        if (nodes[i].source_id != 0) {
+        if (nodes[i].source_id != 0 && nodes[i].source_id != UINT64_MAX) {
             if (first) {
                 for (int d = 0; d < 2; d++) {
                     bounds[d] = nodes[i].size[d];
@@ -2457,7 +2449,16 @@ int kd_get_serialized_bounds(const char *filename, kd_box bounds) {
         return KD_NOTFOUND;
     }
     
-    int ret = kd_get_mmap_bounds(nodes, node_count, bounds);
+    int ret;
+    // Check if the last node is our O(1) sentinel node
+    if (nodes[node_count - 1].source_id == UINT64_MAX) {
+        for (int d = 0; d < 4; d++) {
+            bounds[d] = nodes[node_count - 1].size[d];
+        }
+        ret = KD_OK;
+    } else {
+        ret = kd_get_mmap_bounds(nodes, node_count, bounds);
+    }
     
     munmap(nodes, sb.st_size);
     close(fd);

@@ -1075,8 +1075,24 @@ function get_serialized_bounds(filename::String, CType::Type{C}, dim::Int=3)::Un
     end
     
     node_count = file_size ÷ node_size
-    nodes = Vector{MmapNode{2*dim, C}}(undef, node_count)
     
+    # Try O(1) fast sentinel check at the end of the file
+    io = open(filename, "r")
+    try
+        seek(io, (node_count - 1) * node_size)
+        source_id = read(io, UInt64)
+        if source_id == typemax(UInt64)
+            size_tup = NTuple{2*dim, C}(Tuple(read(io, CType) for _ in 1:(2*dim)))
+            return size_tup
+        end
+    catch e
+        # Ignore and fallback
+    finally
+        close(io)
+    end
+    
+    # Fallback to O(N) scan
+    nodes = Vector{MmapNode{2*dim, C}}(undef, node_count)
     io = open(filename, "r")
     try
         for i in 1:node_count

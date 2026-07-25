@@ -3,8 +3,30 @@ import os
 import sys
 import glob
 
+def get_kdtree_bounds(filepath, dim=3, is_64bit=True):
+    """
+    Read the total bounding box from a serialized .kdtree file.
+    Uses our high-performance O(1) sentinel node check at the end of the file.
+    """
+    coord_size = 8 if is_64bit else 4
+    record_size = 8 + (2 * dim + 3) * coord_size + 16
+    
+    try:
+        with open(filepath, "rb") as f:
+            f.seek(-record_size, 2) # Jump straight to the last record (sentinel)
+            source_id = int.from_bytes(f.read(8), "little")
+            if source_id == 0xffffffffffffffff: # UINT64_MAX sentinel
+                bounds = []
+                for _ in range(2 * dim):
+                    val = int.from_bytes(f.read(coord_size), "little", signed=True)
+                    bounds.append(val)
+                return bounds
+    except Exception as e:
+        print(f"Error reading bounds from {filepath}: {e}", file=sys.stderr)
+    return None
+
 def calculate_box_volume(coords):
-    if len(coords) < 6:
+    if not coords or len(coords) < 6:
         return 0.0
     min_x, min_y, min_z, max_x, max_y, max_z = coords
     dx = float(max_x - min_x)
@@ -13,19 +35,6 @@ def calculate_box_volume(coords):
     if dx < 0 or dy < 0 or dz < 0:
         return 0.0
     return dx * dy * dz
-
-def parse_bb_file(filepath):
-    try:
-        with open(filepath, "r") as f:
-            line = f.readline().strip()
-            if not line:
-                return None
-            parts = line.split()
-            if len(parts) >= 6:
-                return [int(x) for x in parts[:6]]
-    except Exception as e:
-        print(f"Error reading {filepath}: {e}", file=sys.stderr)
-    return None
 
 def format_volume(v):
     # Since coordinates are scaled by 1e9, the physical volume is in cubic parsecs.
@@ -42,25 +51,25 @@ def format_volume(v):
 def main():
     target_dir = sys.argv[1] if len(sys.argv) > 1 else "."
     
-    # We find all original .bb files (e.g. ones that do not end in -<digit>.bb)
-    pattern = os.path.join(target_dir, "*.bb")
-    all_bb_files = glob.glob(pattern)
+    # We find all original .kdtree files (e.g. ones that do not end in -<digit>.kdtree)
+    pattern = os.path.join(target_dir, "*.kdtree")
+    all_kdtree_files = glob.glob(pattern)
     
-    original_bb_files = []
-    for f in all_bb_files:
+    original_kdtree_files = []
+    for f in all_kdtree_files:
         base = os.path.basename(f)
         name, _ = os.path.splitext(base)
         # If the name ends in -0, -1, ..., -9, it is a subtree segment, not the original!
         parts = name.split("-")
         if len(parts) > 1 and parts[-1].isdigit() and 0 <= int(parts[-1]) <= 9:
             continue
-        original_bb_files.append(f)
+        original_kdtree_files.append(f)
         
-    original_bb_files = sorted(original_bb_files)
+    original_kdtree_files = sorted(original_kdtree_files)
     
-    if not original_bb_files:
-        print(f"No original *.bb files found in: {target_dir}")
-        print("Please run fits2kd first to generate them.")
+    if not original_kdtree_files:
+        print(f"No original *.kdtree files found in: {target_dir}")
+        print("Please run the pipeline or fits2kd first to generate them.")
         return
 
     print("=" * 95)
@@ -70,8 +79,8 @@ def main():
     global_orig_vol = 0.0
     global_sub_vol = 0.0
 
-    for orig_f in original_bb_files:
-        orig_coords = parse_bb_file(orig_f)
+    for orig_f in original_kdtree_files:
+        orig_coords = get_kdtree_bounds(orig_f, dim=3, is_64bit=True)
         if not orig_coords:
             continue
             
@@ -86,9 +95,9 @@ def main():
         subtrees_found = 0
         
         for s in range(10):
-            sub_f = f"{base_path}-{s}.bb"
+            sub_f = f"{base_path}-{s}.kdtree"
             if os.path.exists(sub_f):
-                sub_coords = parse_bb_file(sub_f)
+                sub_coords = get_kdtree_bounds(sub_f, dim=3, is_64bit=True)
                 if sub_coords:
                     sub_vol = calculate_box_volume(sub_coords)
                     subtree_vol_sum += sub_vol

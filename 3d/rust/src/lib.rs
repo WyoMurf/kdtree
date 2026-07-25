@@ -1006,13 +1006,37 @@ pub fn get_mmap_bounds<C: Coord>(nodes: &[MmapNode<C>]) -> Option<KdBox<C>> {
 
 pub fn get_serialized_bounds<C: Coord>(filename: &str) -> std::io::Result<Option<KdBox<C>>> {
     use std::fs::File;
-    use std::io::{BufReader, Read};
+    use std::io::{BufReader, Read, Seek, SeekFrom};
 
-    let file = File::open(filename)?;
-    let mut reader = BufReader::new(file);
-
-    let mut nodes = Vec::new();
+    let mut file = File::open(filename)?;
+    let metadata = file.metadata()?;
     const DIM: usize = 3; // For 3D
+
+    let t_size = std::mem::size_of::<C>();
+    let record_size = (8 + (2 * DIM + 3) * t_size + 16) as i64;
+
+    if metadata.len() >= record_size as u64 && metadata.len() % record_size as u64 == 0 {
+        // Try O(1) fast sentinel check at the end of the file
+        file.seek(SeekFrom::End(-record_size))?;
+        let mut reader = BufReader::new(&mut file);
+
+        let mut id_buf = [0u8; 8];
+        reader.read_exact(&mut id_buf)?;
+        let source_id = u64::from_le_bytes(id_buf);
+
+        if source_id == u64::MAX {
+            let mut size = [C::zero(); 2 * DIM];
+            for val in size.iter_mut() {
+                *val = C::read_from(&mut reader)?;
+            }
+            return Ok(Some(size));
+        }
+    }
+
+    // Fallback to O(N) scan
+    file.seek(SeekFrom::Start(0))?;
+    let mut reader = BufReader::new(file);
+    let mut nodes = Vec::new();
 
     loop {
         let mut id_buf = [0u8; 8];

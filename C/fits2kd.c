@@ -58,31 +58,6 @@ const ParallaxRange PARALLAX_RANGES[NUM_SEGMENTS] = {
     {20.0, 1000000.0} // Covers any remaining high parallax
 };
 
-void write_bb_file(const char *kdtree_filename, kd_3d_64_box bounds) {
-    char bb_filename[512];
-    size_t len = strlen(kdtree_filename);
-    if (len > 7 && strcmp(kdtree_filename + len - 7, ".kdtree") == 0) {
-        memcpy(bb_filename, kdtree_filename, len - 7);
-        bb_filename[len - 7] = '\0';
-        strcat(bb_filename, ".bb");
-    } else {
-        strcpy(bb_filename, kdtree_filename);
-        strcat(bb_filename, ".bb");
-    }
-
-    FILE *f = fopen(bb_filename, "w");
-    if (!f) {
-        fprintf(stderr, "Error: Could not open bounding box file %s for writing\n", bb_filename);
-        return;
-    }
-    // Write space-separated bounding box values on the first line
-    fprintf(f, "%lld %lld %lld %lld %lld %lld\n",
-            (long long)bounds[0], (long long)bounds[1], (long long)bounds[2],
-            (long long)bounds[3], (long long)bounds[4], (long long)bounds[5]);
-    fclose(f);
-    printf("Written bounding box file: %s\n", bb_filename);
-}
-
 int main(int argc, char *argv[]) {
     if (argc < 3) {
         printf("Usage: %s <input.fits.gz> <output.kdtree>\n", argv[0]);
@@ -209,14 +184,6 @@ int main(int argc, char *argv[]) {
     
     printf("Serializing Full KD-Tree to %s...\n", argv[2]);
     kd_3d_64_serialize(tree, argv[2]);
-    
-    // Write full tree bounding box
-    kd_3d_64_box full_bounds;
-    if (kd_3d_64_get_bounds(tree, full_bounds) == KD_OK) {
-        write_bb_file(argv[2], full_bounds);
-    } else {
-        printf("Warning: Could not compute bounding box for full tree.\n");
-    }
     kd_3d_64_destroy(tree, NULL);
     
     // --- PART 2: Build and Serialize 10 Subtrees by Parallax ---
@@ -258,13 +225,6 @@ int main(int argc, char *argv[]) {
             
             printf("Serializing subtree to %s...\n", subtree_filename);
             kd_3d_64_serialize(seg_tree, subtree_filename);
-            
-            kd_3d_64_box seg_bounds;
-            if (kd_3d_64_get_bounds(seg_tree, seg_bounds) == KD_OK) {
-                write_bb_file(subtree_filename, seg_bounds);
-            } else {
-                printf("Warning: Could not compute bounding box for subtree %d.\n", s);
-            }
             
             kd_3d_64_destroy(seg_tree, NULL);
             free(seg_stars);

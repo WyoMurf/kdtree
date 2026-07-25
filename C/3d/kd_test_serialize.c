@@ -83,7 +83,7 @@ int main() {
     
     struct stat sb;
     fstat(fd, &sb);
-    assert(sb.st_size == 3 * sizeof(kd_mmap_node));
+    assert(sb.st_size == (3 + 1) * sizeof(kd_mmap_node));
     
     kd_mmap_node *array = mmap(NULL, sb.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
     assert(array != MAP_FAILED);
