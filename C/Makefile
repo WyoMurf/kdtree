@@ -4,13 +4,16 @@ CC = gcc
 CFLAGS = -std=c11 -g -Wall -Wno-unused -fPIC
 LDFLAGS = -lm
 
-all: libkdtree.so libkdtree.a viewer fits2kd csv2fits
+all: libkdtree.so libkdtree.a viewer fits2kd csv2fits kd2lod
 
-viewer: viewer.c
-	$(CC) $(CFLAGS) -std=gnu11 viewer.c -o $@ -I/home/murf/external-sources/raylib/src -L/home/murf/external-sources/raylib/src -Wl,-rpath,/home/murf/external-sources/raylib/src -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
+viewer: viewer.c include/kdtree.h include/kd2lod.h
+	$(CC) $(CFLAGS) -std=gnu11 viewer.c -o $@ -Iinclude -I/home/murf/external-sources/raylib/src -L/home/murf/external-sources/raylib/src -Wl,-rpath,/home/murf/external-sources/raylib/src -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
 
 fits2kd: fits2kd.c libkdtree.a
 	$(CC) $(CFLAGS) -std=gnu11 -O3 fits2kd.c libkdtree.a -o $@ -Iinclude -lcfitsio -lm
+
+kd2lod: kd2lod.c include/kdtree.h include/kd2lod.h
+	$(CC) $(CFLAGS) -std=gnu11 -O3 kd2lod.c -o $@ -Iinclude -lm
 
 csv2fits: csv2fits.c
 	$(CC) $(CFLAGS) -std=gnu11 -O3 csv2fits.c -o $@ -lcfitsio -lz -lm
@@ -40,7 +43,7 @@ libkdtree.a: 2d/kd.o 2d/kd_64.o 2d/kd_128.o 3d/kd.o 3d/kd_64.o 3d/kd_128.o
 	ar rcs $@ $^
 
 clean:
-	rm -f 2d/*.o 3d/*.o libkdtree.so libkdtree.a 2d/test_* 3d/test_* viewer fits2kd csv2fits
+	rm -f 2d/*.o 3d/*.o libkdtree.so libkdtree.a 2d/test_* 3d/test_* viewer fits2kd csv2fits kd2lod
 
 install: libkdtree.so libkdtree.a
 	install -D -m 755 libkdtree.so $(DESTDIR)/usr/lib64/libkdtree.so
