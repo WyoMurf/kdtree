@@ -4,7 +4,12 @@ CC = gcc
 CFLAGS = -std=c11 -g -Wall -Wno-unused -fPIC
 LDFLAGS = -lm
 
-all: libkdtree.so libkdtree.a viewer fits2kd csv2fits kd2lod build_metatree
+# viewer is deliberately not part of `all`: it links against a locally-built
+# raylib via a machine-specific path (see the viewer target below), which
+# CI has no reason to install - `make test` never touches viewer, it only
+# exercises the kdtree library itself. Build it explicitly with `make viewer`
+# wherever raylib is actually available.
+all: libkdtree.so libkdtree.a fits2kd csv2fits kd2lod build_metatree
 
 viewer: viewer.c include/kdtree.h include/kd2lod.h
 	$(CC) $(CFLAGS) -std=gnu11 viewer.c -o $@ -Iinclude -I/home/murf/external-sources/raylib/src -L/home/murf/external-sources/raylib/src -Wl,-rpath,/home/murf/external-sources/raylib/src -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
