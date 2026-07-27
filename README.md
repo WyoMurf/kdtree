@@ -2,15 +2,16 @@
 
 A highly-optimized, memory-safe, and multi-language K-Dimensional Tree (KD-Tree) implementation for high-performance spatial querying. 
 
-This repository contains completely unified 2D and 3D implementations across **C, Go, Julia, and Rust**. Each implementation natively supports `32-bit`, `64-bit`, and `128-bit` coordinate precision, dynamically adapting to your data's requirements.
+This repository contains completely unified 2D and 3D implementations across **C, Go, Julia, and Rust**. Each implementation natively supports `32-bit`, `64-bit`, and `128-bit` coordinate precision, dynamically adapting to your data's requirements. Except for Go, which does not yet support native 128-bit objects (and I'm not interested in using their big-number libraries).
 
 At the core, it stores objects based on their 2-d (x,y) and 3d- (x,y,z) bounding-box coordinates (which can be expressed as 32-bit, 64-bit, or 128-bit integer numbers). These can searched using another bounding box, new objects can be entered, objects can be deleted, the tree can be rebuilt if it would benefit search times, a "badness" of the tree can be determined, and nearest neighbors can be determined.
 
-Recently added is a serialization of the kdtree data, that can be written to disk, then memory-mapped for quick retrieval of built kdtrees. This is for data that doesn't change often. You can build a kdtree for ~500,000 objects in less than 2 sec. This serialization replaces pointers with integer indices, which are remapped on reading. This serialization is coded for C, go, julia, and rust. For 3d-data, a simple data viewer is provided as a demonstration, Some scripts are provided to download, merge and filter the Gaia Source data, which contains 1.8 billion stars, contained in ~3400 download files, and ~3400 AstrophysicalParameters files. These files are filtered to about 1/10 of their original size, by eliminating stars that don't have a parallax value at all, or don't have a solid parallax value.
+Recently added is a serialization of the kdtree data, that can be written to disk, then memory-mapped for quick retrieval of built kdtrees. This is for data that doesn't change often. You can build a kdtree for ~500,000 objects in less than 2 sec. This serialization replaces pointers with integer indices, which are remapped on reading. This serialization is coded for C, go, julia, and rust. For 3d-data, a simple data viewer is provided as a demonstration, Some scripts are provided to download, merge and filter the Gaia Source data, which contains 1.8 billion stars, contained in ~3400 download files, and ~3400 AstrophysicalParameters files. These files are filtered to about 1/10 of their original size, by eliminating stars that don't have a parallax value at all, or don't have a solid parallax value. The C-based viewer has been updated over time to use 2 layers of kdtrees to speed up loading, which is now a "Lazy" loading of the stars that in the viewer's current window. Even with my meager 2060 RTX card, I can view millions of stars (which are either too far or too dim to see) at frame rates from 2 to 3 frames per second (when busy loading shards) to 20+ frames per second.
 
 The viewer is based on raylib, which you will have to clone and compile locally. And, of course, you will need the FITSIO library, and perhaps a Python virtual environment. More on this in a separate README.
 
-I also supply a simple python-based viewer, that basically reads a single kdtree file, and displays that, and supplies keyboard-based inputs to move around thru that data. It requires that you use 
+I also supply a simple python-based viewer, that basically reads a single kdtree file, and displays that, and supplies keyboard-based inputs to move around thru that data. It requires that you use a virtual environment on some systems (like my local AlmaLinux10.2 machine).
+
 
 
 ## Implementations
