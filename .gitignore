@@ -2,10 +2,17 @@
 go/kd.go.top
 go/kd.go.bottom
 # Rust
-rust/target/
-coord64/rust/target/
+2d/rust/target/
+3d/rust/target/
 # C
-coord64/C/benchmark
-coord64/C/kd_test_hard
-coord64/C/kd_test_hard_64
-coord64/C/*.o
+*.a
+*.o
+*.so
+*~
+C/build_metatree
+C/csv2fits
+C/fits2kd
+C/kd2lod
+C/viewer
+parallel_times
+
