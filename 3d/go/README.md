@@ -21,6 +21,11 @@ func main() {
     tree64 := kd.Create[int64]()
     box64 := kd.Box[int64]{0, 0, 0, 10, 10, 10}
     tree64.Insert("item64", box64)
+
+    // Instantiate a float64 KDTree, for real-valued coordinates
+    treef64 := kd.Create[float64]()
+    boxf64 := kd.Box[float64]{0, 0, 0, 10.5, 10.5, 10.5}
+    treef64.Insert("itemf64", boxf64)
 }
 ```
 

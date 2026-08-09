@@ -987,12 +987,21 @@ void kd_print_path(void) /* this routine is for debug */
 	{
 		KDElem *elem;
 		elem = path_to_item[i];
+#if defined(COORD_F64)
+		printf("%d: \tElem: %ld [%lx] lo=%g hi=%g, other=%g, size= \t(%g\t%g\t%g\t%g)  Loson:%lx[%ld]  HiSon:%lx[%ld]\n",
+			   i,(long)elem->item, (unsigned long)elem,
+			   elem->lo_min_bound, elem->hi_max_bound, elem->other_bound,
+			   elem->size[0],elem->size[1],elem->size[2],elem->size[3],
+			   (long)elem->sons[0],elem->sons[0]?(long)elem->sons[0]->item:0,
+			   (long)elem->sons[1],elem->sons[1]?(long)elem->sons[1]->item:0);
+#else
 		printf("%d: \tElem: %ld [%lx] lo=%lld hi=%lld, other=%lld, size= \t(%lld\t%lld\t%lld\t%lld)  Loson:%lx[%ld]  HiSon:%lx[%ld]\n",
 			   i,(long)elem->item, (unsigned long)elem,
 			   (long long)elem->lo_min_bound, (long long)elem->hi_max_bound, (long long)elem->other_bound,
 			   (long long)elem->size[0],(long long)elem->size[1],(long long)elem->size[2],(long long)elem->size[3],
 			   (long)elem->sons[0],elem->sons[0]?(long)elem->sons[0]->item:0,
 			   (long)elem->sons[1],elem->sons[1]?(long)elem->sons[1]->item:0);
+#endif
 	}
 }
 
@@ -1020,7 +1029,7 @@ static KDElem *find_item(KDElem *elem, int disc, kd_generic item, kd_box size, i
 {
     KDElem *result;
     coord_t val;
-    int new_disc, vert;
+    int new_disc, vert, idx;
 
     /* Compare current element against the one we are looking for */
     if (item == elem->item)
@@ -1050,11 +1059,11 @@ static KDElem *find_item(KDElem *elem, int disc, kd_generic item, kd_box size, i
 			}
 			if (val == 0) val = 1; /* Force upward if equal */
 		}
-		val = (val >= 0);
-		if (elem->sons[val])
+		idx = (val >= 0);
+		if (elem->sons[idx])
 		{
 			if (search_p) NEW_PATH(elem);
-			result = find_item(elem->sons[val], NEXTDISC(disc), item,
+			result = find_item(elem->sons[idx], NEXTDISC(disc), item,
 							   size, search_p, items_elem);
 			/* Bounds update if insert */
 			if (!search_p) bounds_update(elem, disc, size);
@@ -1073,7 +1082,7 @@ static KDElem *find_item(KDElem *elem, int disc, kd_generic item, kd_box size, i
 			vert = NEXTDISC(disc) & 0x01;
 			if( items_elem )
 			{
-				elem->sons[val] = items_elem;
+				elem->sons[idx] = items_elem;
 				items_elem->size[0] = size[0];
 				items_elem->size[1] = size[1];
 				items_elem->size[2] = size[2];
@@ -1086,13 +1095,13 @@ static KDElem *find_item(KDElem *elem, int disc, kd_generic item, kd_box size, i
 				
 			}
 			else
-				elem->sons[val] =
+				elem->sons[idx] =
 					kd_new_node(item, size, size[vert], size[vert+2],
 								((NEXTDISC(disc)&0x2) ? size[vert] : size[vert+2]),
 								(KDElem *) 0, (KDElem *) 0);
 			/* Bounds update */
 			bounds_update(elem, disc, size);
-			return elem->sons[val];
+			return elem->sons[idx];
 		}
     }
 }
@@ -1606,12 +1615,21 @@ static void pr_tree(KDElem *elem, int disc, int depth)
     int i;
 
     for (i = 0;  i < depth;  i++) putchar(' ');
+#if defined(COORD_F64)
+    Printf("%ld: %g %g %g (", (long) elem->item, elem->lo_min_bound,
+		  elem->other_bound, elem->hi_max_bound);
+    for (i = 0;  i < KD_BOX_MAX;  i++) {
+	if (i == disc) putchar('*');
+	Printf("%g ", elem->size[i]);
+    }
+#else
     Printf("%ld: %lld %lld %lld (", (long) elem->item, (long long)elem->lo_min_bound,
 		  (long long)elem->other_bound, (long long)elem->hi_max_bound);
     for (i = 0;  i < KD_BOX_MAX;  i++) {
 	if (i == disc) putchar('*');
 	Printf("%lld ", (long long)elem->size[i]);
     }
+#endif
     Printf(")\n");
     for (i = 0;  i < 2;  i++)
 	{
@@ -2096,12 +2114,21 @@ void kd_print_nearest(kd_tree tree, coord_t x, coord_t y, int m)
 			xz, m);
 	for(i=0;i<m;i++)
 	{
+#if defined(COORD_F64)
+		fprintf(stderr,"Nearest Neighbor: dist to center: %g units. elem=%lx. item=%ld. ([%g,%g]->[%g,%g])\n",
+				list[i].dist, (unsigned long)list[i].elem,(long)list[i].elem->item,
+				list[i].elem->size[KD_LEFT],
+				list[i].elem->size[KD_BOTTOM],
+				list[i].elem->size[KD_RIGHT],
+				list[i].elem->size[KD_TOP]);
+#else
 		fprintf(stderr,"Nearest Neighbor: dist to center: %g units. elem=%lx. item=%ld. ([%lld,%lld]->[%lld,%lld])\n",
 				list[i].dist, (unsigned long)list[i].elem,(long)list[i].elem->item,
 				(long long)list[i].elem->size[KD_LEFT],
 				(long long)list[i].elem->size[KD_BOTTOM],
 				(long long)list[i].elem->size[KD_RIGHT],
 				(long long)list[i].elem->size[KD_TOP]);
+#endif
 	}
 	free(list);
 }

@@ -2,9 +2,9 @@
 
 A highly-optimized, memory-safe, and multi-language K-Dimensional Tree (KD-Tree) implementation for high-performance spatial querying. 
 
-This repository contains completely unified 2D and 3D implementations across **C, Go, Julia, and Rust**. Each implementation natively supports `32-bit`, `64-bit`, and `128-bit` coordinate precision, dynamically adapting to your data's requirements. Except for Go, which does not yet support native 128-bit objects (and I'm not interested in using their big-number libraries).
+This repository contains completely unified 2D and 3D implementations across **C, Go, Julia, and Rust**. Each implementation natively supports `32-bit`, `64-bit`, and `128-bit` integer coordinate precision, plus `float64` for real-valued coordinates, dynamically adapting to your data's requirements. Except for Go, which does not yet support native 128-bit integer objects (and I'm not interested in using their big-number libraries) — Go does support `float64` like everyone else.
 
-At the core, it stores objects based on their 2-d (x,y) and 3d- (x,y,z) bounding-box coordinates (which can be expressed as 32-bit, 64-bit, or 128-bit integer numbers). These can searched using another bounding box, new objects can be entered, objects can be deleted, the tree can be rebuilt if it would benefit search times, a "badness" of the tree can be determined, and nearest neighbors can be determined.
+At the core, it stores objects based on their 2-d (x,y) and 3d- (x,y,z) bounding-box coordinates (which can be expressed as 32-bit, 64-bit, or 128-bit integers, or as float64 real numbers). These can searched using another bounding box, new objects can be entered, objects can be deleted, the tree can be rebuilt if it would benefit search times, a "badness" of the tree can be determined, and nearest neighbors can be determined.
 
 Recently added is a serialization of the kdtree data, that can be written to disk, then memory-mapped for quick retrieval of built kdtrees. This is for data that doesn't change often. You can build a kdtree for ~500,000 objects in less than 2 sec. This serialization replaces pointers with integer indices, which are remapped on reading. This serialization is coded for C, go, julia, and rust. For 3d-data, a simple data viewer is provided as a demonstration, Some scripts are provided to download, merge and filter the Gaia Source data, which contains 1.8 billion stars, contained in ~3400 download files, and ~3400 AstrophysicalParameters files. These files are filtered to about 1/10 of their original size, by eliminating stars that don't have a parallax value at all, or don't have a solid parallax value. The C-based viewer has been updated over time to use 2 layers of kdtrees to speed up loading, which is now a "Lazy" loading of the stars that in the viewer's current window. Even with my meager 2060 RTX card, I can view millions of stars (which are either too far or too dim to see) at frame rates from 2 to 3 frames per second (when busy loading shards) to 20+ frames per second.
 
@@ -20,10 +20,10 @@ Choose the language environment that best fits your stack. Each implementation r
 
 | Language | Directory | Key Features | Precision Support |
 | :--- | :--- | :--- | :--- |
-| **C** | [`/C`](C/README.md) | Single shared library (`libkdtree.so`), zero-collision macro suffixes, highly optimized structs. | `int32_t`, `int64_t`, `__int128` |
-| **Rust** | [`/2d/rust`](2d/rust/README.md) <br> [`/3d/rust`](3d/rust/README.md) | Safe generic traits (`Tree<T, C>`), contiguous memory arena allocation, zero-cost abstractions. | `i32`, `i64`, `i128` |
-| **Julia** | [`/2d/julia`](2d/julia/README.md) <br> [`/3d/julia`](3d/julia/README.md) | Idiomatic parametric types (`Tree{T, C<:Integer}`), multiple dispatch, automated JIT compilation. | `Int32`, `Int64`, `Int128` |
-| **Go** | [`/2d/go`](2d/go/README.md) <br> [`/3d/go`](3d/go/README.md) | Go 1.18+ Generics (`[T Coord]`), clean un-suffixed APIs, safe struct bounds. | `int32`, `int64` |
+| **C** | [`/C`](C/README.md) | Single shared library (`libkdtree.so`), zero-collision macro suffixes, highly optimized structs. | `int32_t`, `int64_t`, `__int128`, `double` |
+| **Rust** | [`/2d/rust`](2d/rust/README.md) <br> [`/3d/rust`](3d/rust/README.md) | Safe generic traits (`Tree<T, C>`), contiguous memory arena allocation, zero-cost abstractions. 2D and 3D now have identical method coverage (`nearest`, `really_delete`, `badness`). | `i32`, `i64`, `i128`, `f64` |
+| **Julia** | [`/2d/julia`](2d/julia/README.md) <br> [`/3d/julia`](3d/julia/README.md) | Idiomatic parametric types (`Tree{T, C<:Real}`), multiple dispatch, automated JIT compilation. | `Int32`, `Int64`, `Int128`, `Float64` |
+| **Go** | [`/2d/go`](2d/go/README.md) <br> [`/3d/go`](3d/go/README.md) | Go 1.18+ Generics (`[T Coord]`), clean un-suffixed APIs, safe struct bounds. | `int32`, `int64`, `float64` |
 
 ## Capabilities
 
@@ -37,9 +37,9 @@ All language implementations adhere to the same underlying high-performance algo
 
 ## Precision & Bit-Widths
 
-Unlike standard algorithms that force you to choose between memory efficiency (32-bit) and overflow safety (64-bit) at the project level, this library parameterizes coordinate widths. All languages but Go can support 128-bit integer coordinates. When Go is upgraded to support 128-bit integers natively, we will upgrade that implementation. 
+Unlike standard algorithms that force you to choose between memory efficiency (32-bit) and overflow safety (64-bit) at the project level, this library parameterizes coordinate widths. All languages but Go can support 128-bit integer coordinates. When Go is upgraded to support 128-bit integers natively, we will upgrade that implementation. All four languages also support `float64`/`double` coordinates natively, for real-valued (non-integer) spatial data.
 
-Whether you compile via Make flags (C), invoke Generic parameters (Rust/Go), or utilize dynamic dispatch (Julia), the KD-Tree will natively process your exact bit-width without requiring separate library distributions or suffering from type-casting overheads.
+Whether you compile via Make flags (C), invoke Generic parameters (Rust/Go), or utilize dynamic dispatch (Julia), the KD-Tree will natively process your exact bit-width — integer or floating-point — without requiring separate library distributions or suffering from type-casting overheads.
 
 ## License
 

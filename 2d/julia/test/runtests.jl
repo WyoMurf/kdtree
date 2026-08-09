@@ -3,7 +3,7 @@ using KDTree
 import KDTree: serialize, insert!, search, nearest, count_items, is_member, hard_delete!, really_delete!, badness
 using Random
 
-for CType in (Int32, Int64, Int128)
+for CType in (Int32, Int64, Int128, Float64)
     @testset "KDTree Tests ($CType)" begin
         @testset "KDTree Basic & Hard Delete" begin
             tree = Tree{String, CType}()

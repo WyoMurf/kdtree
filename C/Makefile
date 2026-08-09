@@ -35,6 +35,9 @@ csv2fits: csv2fits.c
 2d/kd_128.o: 2d/kd.c 2d/kd.h
 	$(CC) $(CFLAGS) -DCOORD_128 -c 2d/kd.c -o $@
 
+2d/kd_f64.o: 2d/kd.c 2d/kd.h
+	$(CC) $(CFLAGS) -DCOORD_F64 -c 2d/kd.c -o $@
+
 3d/kd.o: 3d/kd.c 3d/kd.h
 	$(CC) $(CFLAGS) -c 3d/kd.c -o $@
 
@@ -44,10 +47,13 @@ csv2fits: csv2fits.c
 3d/kd_128.o: 3d/kd.c 3d/kd.h
 	$(CC) $(CFLAGS) -DCOORD_128 -c 3d/kd.c -o $@
 
-libkdtree.so: 2d/kd.o 2d/kd_64.o 2d/kd_128.o 3d/kd.o 3d/kd_64.o 3d/kd_128.o
+3d/kd_f64.o: 3d/kd.c 3d/kd.h
+	$(CC) $(CFLAGS) -DCOORD_F64 -c 3d/kd.c -o $@
+
+libkdtree.so: 2d/kd.o 2d/kd_64.o 2d/kd_128.o 2d/kd_f64.o 3d/kd.o 3d/kd_64.o 3d/kd_128.o 3d/kd_f64.o
 	$(CC) -shared -o $@ $^ $(LDFLAGS)
 
-libkdtree.a: 2d/kd.o 2d/kd_64.o 2d/kd_128.o 3d/kd.o 3d/kd_64.o 3d/kd_128.o
+libkdtree.a: 2d/kd.o 2d/kd_64.o 2d/kd_128.o 2d/kd_f64.o 3d/kd.o 3d/kd_64.o 3d/kd_128.o 3d/kd_f64.o
 	ar rcs $@ $^
 
 clean:
@@ -65,8 +71,10 @@ TESTS_2D_64 = $(patsubst %, 2d/test_%_64, $(TEST_TYPES))
 TESTS_3D_64 = $(patsubst %, 3d/test_%_64, $(TEST_TYPES))
 TESTS_2D_128 = $(patsubst %, 2d/test_%_128, $(TEST_TYPES))
 TESTS_3D_128 = $(patsubst %, 3d/test_%_128, $(TEST_TYPES))
+TESTS_2D_F64 = $(patsubst %, 2d/test_%_f64, $(TEST_TYPES))
+TESTS_3D_F64 = $(patsubst %, 3d/test_%_f64, $(TEST_TYPES))
 
-ALL_TESTS = $(TESTS_2D) $(TESTS_3D) $(TESTS_2D_64) $(TESTS_3D_64) $(TESTS_2D_128) $(TESTS_3D_128)
+ALL_TESTS = $(TESTS_2D) $(TESTS_3D) $(TESTS_2D_64) $(TESTS_3D_64) $(TESTS_2D_128) $(TESTS_3D_128) $(TESTS_2D_F64) $(TESTS_3D_F64)
 
 2d/test_%: 2d/kd_test_%.c 2d/kd.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
@@ -77,6 +85,9 @@ ALL_TESTS = $(TESTS_2D) $(TESTS_3D) $(TESTS_2D_64) $(TESTS_3D_64) $(TESTS_2D_128
 2d/test_%_128: 2d/kd_test_%.c 2d/kd_128.o
 	$(CC) $(CFLAGS) -DCOORD_128 -o $@ $^ $(LDFLAGS)
 
+2d/test_%_f64: 2d/kd_test_%.c 2d/kd_f64.o
+	$(CC) $(CFLAGS) -DCOORD_F64 -o $@ $^ $(LDFLAGS)
+
 3d/test_%: 3d/kd_test_%.c 3d/kd.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -85,6 +96,9 @@ ALL_TESTS = $(TESTS_2D) $(TESTS_3D) $(TESTS_2D_64) $(TESTS_3D_64) $(TESTS_2D_128
 
 3d/test_%_128: 3d/kd_test_%.c 3d/kd_128.o
 	$(CC) $(CFLAGS) -DCOORD_128 -o $@ $^ $(LDFLAGS)
+
+3d/test_%_f64: 3d/kd_test_%.c 3d/kd_f64.o
+	$(CC) $(CFLAGS) -DCOORD_F64 -o $@ $^ $(LDFLAGS)
 
 test: $(ALL_TESTS)
 	@for t in $(ALL_TESTS); do \

@@ -52,8 +52,10 @@
 
 #include "../include/kdtree.h"
 
-/* 32-bit vs 64-bit vs 128-bit precision configuration */
-#if defined(COORD_128)
+/* 32-bit vs 64-bit vs 128-bit vs float64 precision configuration */
+#if defined(COORD_F64)
+typedef double coord_t;
+#elif defined(COORD_128)
 typedef __int128 coord_t;
 #elif defined(COORD_64)
 typedef int64_t coord_t;
@@ -62,7 +64,39 @@ typedef int32_t coord_t;
 #endif
 
 /* Unified function names with dimension and bit-width suffixes */
-#if defined(COORD_128)
+#if defined(COORD_F64)
+#define kd_create         kd_3d_f64_create
+#define kd_build          kd_3d_f64_build
+#define kd_destroy        kd_3d_f64_destroy
+#define kd_is_member      kd_3d_f64_is_member
+#define kd_insert         kd_3d_f64_insert
+#define kd_delete         kd_3d_f64_delete
+#define kd_really_delete  kd_3d_f64_really_delete
+#define kd_start          kd_3d_f64_start
+#define kd_next           kd_3d_f64_next
+#define kd_finish         kd_3d_f64_finish
+#define kd_count          kd_3d_f64_count
+#define kd_print          kd_3d_f64_print
+#define kd_badness        kd_3d_f64_badness
+#define kd_rebuild        kd_3d_f64_rebuild
+#define kd_serialize      kd_3d_f64_serialize
+#define kd_get_bounds     kd_3d_f64_get_bounds
+#define kd_get_serialized_bounds kd_3d_f64_get_serialized_bounds
+#define kd_get_mmap_bounds kd_3d_f64_get_mmap_bounds
+#define kd_mmap_node      kd_3d_f64_mmap_node
+#define kd_priority       kd_priority_3d_f64
+#define kd_nearest        kd_3d_f64_nearest
+#define kd_print_nearest  kd_3d_f64_print_nearest
+#define collect_nodes     kd_3d_f64_collect_nodes
+#define kd_delete_stats   kd_3d_f64_delete_stats
+#define kd_do_delete      kd_3d_f64_do_delete
+#define kd_err_string     kd_3d_f64_err_string
+#define kd_print_path     kd_3d_f64_print_path
+#define kd_set_build_depth kd_3d_f64_set_build_depth
+#define NEW_PATH          kd_3d_f64_NEW_PATH
+#define unload_items      kd_3d_f64_unload_items
+#define kd_pkg_name       kd_3d_f64_pkg_name
+#elif defined(COORD_128)
 #define kd_create         kd_3d_128_create
 #define kd_build          kd_3d_128_build
 #define kd_destroy        kd_3d_128_destroy

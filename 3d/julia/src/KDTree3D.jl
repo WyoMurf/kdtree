@@ -3,7 +3,7 @@ module KDTree3D
 export serialize, get_bounds, get_serialized_bounds, get_mmap_bounds, MmapNode, Tree, Box, insert!, delete!, count_items, is_member, hard_delete!, search, nearest, 
        LEFT, BOTTOM, FLOOR, RIGHT, TOP, CEIL, build_tree, rebuild!, badness
 
-const Box{C<:Integer} = NTuple{6, C}
+const Box{C<:Real} = NTuple{6, C}
 const LEFT = 1
 const BOTTOM = 2
 const FLOOR = 3
@@ -11,7 +11,7 @@ const RIGHT = 4
 const TOP = 5
 const CEIL = 6
 
-struct MmapNode{N, C<:Integer}
+struct MmapNode{N, C<:Real}
     source_id::UInt64
     size::NTuple{N, C}
     lo_min_bound::C
@@ -21,7 +21,7 @@ struct MmapNode{N, C<:Integer}
     right_child::Int64
 end
 
-mutable struct Node{T, C<:Integer}
+mutable struct Node{T, C<:Real}
     item::Union{T, Nothing}
     size::Box{C}
     lo_min_bound::C
@@ -29,25 +29,25 @@ mutable struct Node{T, C<:Integer}
     other_bound::C
     sons::Vector{Union{Node{T, C}, Nothing}}
     
-    function Node{T, C}(item, size::Box{C}, lo::C, hi::C, ob::C) where {T, C<:Integer}
+    function Node{T, C}(item, size::Box{C}, lo::C, hi::C, ob::C) where {T, C<:Real}
         new{T, C}(item, size, lo, hi, ob, Union{Node{T, C}, Nothing}[nothing, nothing])
     end
 end
 
-mutable struct Tree{T, C<:Integer}
+mutable struct Tree{T, C<:Real}
     root::Union{Node{T, C}, Nothing}
     item_count::Int
     dead_count::Int
     extent::Vector{C}
     
-    function Tree{T, C}() where {T, C<:Integer}
+    function Tree{T, C}() where {T, C<:Real}
         new{T, C}(nothing, 0, 0, zeros(C, 6))
     end
 end
 
 next_disc(disc::Int) = (disc % 6) + 1
 
-function bounds_update!(node::Node{T, C}, disc::Int, size::Box{C}) where {T, C<:Integer}
+function bounds_update!(node::Node{T, C}, disc::Int, size::Box{C}) where {T, C<:Real}
     vert = ((disc - 1) % 3) + 1
     node.lo_min_bound = min(node.lo_min_bound, size[vert])
     node.hi_max_bound = max(node.hi_max_bound, size[vert + 3])
@@ -58,7 +58,7 @@ function bounds_update!(node::Node{T, C}, disc::Int, size::Box{C}) where {T, C<:
     end
 end
 
-function insert!(tree::Tree{T, C}, item::T, size::Box{C}) where {T, C<:Integer}
+function insert!(tree::Tree{T, C}, item::T, size::Box{C}) where {T, C<:Real}
     if tree.root === nothing
         tree.root = Node{T, C}(item, size, size[1], size[4], size[1])
         tree.extent = collect(size)
@@ -75,7 +75,7 @@ function insert!(tree::Tree{T, C}, item::T, size::Box{C}) where {T, C<:Integer}
     end
 end
 
-function insert_recursive!(elem::Node{T, C}, disc::Int, item::T, size::Box{C}) where {T, C<:Integer}
+function insert_recursive!(elem::Node{T, C}, disc::Int, item::T, size::Box{C}) where {T, C<:Real}
     if elem.item !== nothing && elem.item == item
         return false
     end
@@ -116,7 +116,7 @@ function insert_recursive!(elem::Node{T, C}, disc::Int, item::T, size::Box{C}) w
     return true
 end
 
-function intersect(b1::Box{C}, b2::Box{C}) where {C<:Integer}
+function intersect(b1::Box{C}, b2::Box{C}) where {C<:Real}
     return b1[RIGHT] >= b2[LEFT] &&
            b2[RIGHT] >= b1[LEFT] &&
            b1[TOP] >= b2[BOTTOM] &&
@@ -125,7 +125,7 @@ function intersect(b1::Box{C}, b2::Box{C}) where {C<:Integer}
            b2[CEIL] >= b1[FLOOR]
 end
 
-function search(tree::Tree{T, C}, extent::Box{C}) where {T, C<:Integer}
+function search(tree::Tree{T, C}, extent::Box{C}) where {T, C<:Real}
     results = Vector{Tuple{T, Box{C}}}()
     if tree.root === nothing
         return results
@@ -181,13 +181,13 @@ function search(tree::Tree{T, C}, extent::Box{C}) where {T, C<:Integer}
     return results
 end
 
-function hard_delete!(tree::Tree{T, C}, item::T, size::Box{C}) where {T, C<:Integer}
+function hard_delete!(tree::Tree{T, C}, item::T, size::Box{C}) where {T, C<:Real}
     initial_count = tree.item_count
     tree.root = hard_delete_recursive!(tree.root, 1, item, size, tree)
     return tree.item_count < initial_count
 end
 
-function hard_delete_recursive!(node::Union{Node{T, C}, Nothing}, disc::Int, item::T, size::Box{C}, tree::Tree{T, C}) where {T, C<:Integer}
+function hard_delete_recursive!(node::Union{Node{T, C}, Nothing}, disc::Int, item::T, size::Box{C}, tree::Tree{T, C}) where {T, C<:Real}
     if node === nothing
         return nothing
     end
@@ -232,7 +232,7 @@ function hard_delete_recursive!(node::Union{Node{T, C}, Nothing}, disc::Int, ite
     return node
 end
 
-function find_extreme(node::Node{T, C}, node_disc::Int, target_disc::Int, find_min::Bool) where {T, C<:Integer}
+function find_extreme(node::Node{T, C}, node_disc::Int, target_disc::Int, find_min::Bool) where {T, C<:Real}
     best_item = node.item
     best_size = node.size
 
@@ -280,7 +280,7 @@ function find_extreme(node::Node{T, C}, node_disc::Int, target_disc::Int, find_m
     return best_item, best_size
 end
 
-function find_recursive(elem::Union{Node{T, C}, Nothing}, disc::Int, item::T, size::Box{C}) where {T, C<:Integer}
+function find_recursive(elem::Union{Node{T, C}, Nothing}, disc::Int, item::T, size::Box{C}) where {T, C<:Real}
     if elem === nothing
         return false
     end
@@ -307,15 +307,15 @@ function find_recursive(elem::Union{Node{T, C}, Nothing}, disc::Int, item::T, si
     return find_recursive(elem.sons[child_idx], next_disc(disc), item, size)
 end
 
-is_member(tree::Tree{T, C}, item::T, size::Box{C}) where {T, C<:Integer} = find_recursive(tree.root, 1, item, size)
-count_items(tree::Tree{T, C}) where {T, C<:Integer} = tree.item_count - tree.dead_count
+is_member(tree::Tree{T, C}, item::T, size::Box{C}) where {T, C<:Real} = find_recursive(tree.root, 1, item, size)
+count_items(tree::Tree{T, C}) where {T, C<:Real} = tree.item_count - tree.dead_count
 
 struct Priority{T}
     dist::Float64
     item::Union{T, Nothing}
 end
 
-function nearest(tree::Tree{T, C}, x::C, y::C, z::C, m::Int) where {T, C<:Integer}
+function nearest(tree::Tree{T, C}, x::C, y::C, z::C, m::Int) where {T, C<:Real}
     if tree.root === nothing || m <= 0
         return Priority{T}[]
     end
@@ -331,7 +331,7 @@ function nearest(tree::Tree{T, C}, x::C, y::C, z::C, m::Int) where {T, C<:Intege
     return [Priority{T}(sqrt(p.dist), p.item) for p in list]
 end
 
-function kd_neighbor!(node::Node{T, C}, xq::Box{C}, m::Int, list::Vector{Priority{T}}, bp::Vector{C}, bn::Vector{C}) where {T, C<:Integer}
+function kd_neighbor!(node::Node{T, C}, xq::Box{C}, m::Int, list::Vector{Priority{T}}, bp::Vector{C}, bn::Vector{C}) where {T, C<:Real}
     stack = Tuple{Node{T, C}, Int, Int, Vector{C}, Vector{C}}[]
     push!(stack, (node, 1, 0, copy(bn), copy(bp)))
 
@@ -423,7 +423,7 @@ function kd_neighbor!(node::Node{T, C}, xq::Box{C}, m::Int, list::Vector{Priorit
     end
 end
 
-function add_priority!(m::Int, list::Vector{Priority{T}}, xq::Box{C}, node::Node{T, C}) where {T, C<:Integer}
+function add_priority!(m::Int, list::Vector{Priority{T}}, xq::Box{C}, node::Node{T, C}) where {T, C<:Real}
     d = kd_dist_sq(xq, node.size)
     for x in m:-1:1
         if d < list[x].dist
@@ -437,7 +437,7 @@ function add_priority!(m::Int, list::Vector{Priority{T}}, xq::Box{C}, node::Node
     end
 end
 
-function bounds_overlap_ball(xq::Box{C}, bp::Vector{C}, bn::Vector{C}, m::Int, list::Vector{Priority{T}}) where {T, C<:Integer}
+function bounds_overlap_ball(xq::Box{C}, bp::Vector{C}, bn::Vector{C}, m::Int, list::Vector{Priority{T}}) where {T, C<:Real}
     sum_dist = 0.0
     max_dist = list[m].dist
     for i in 1:3
@@ -458,7 +458,7 @@ function bounds_overlap_ball(xq::Box{C}, bp::Vector{C}, bn::Vector{C}, m::Int, l
     return true
 end
 
-function kd_dist_sq(xq::Box{C}, box_size::Box{C}) where {C<:Integer}
+function kd_dist_sq(xq::Box{C}, box_size::Box{C}) where {C<:Real}
     dx = 0.0
     dy = 0.0
     dz = 0.0
@@ -484,7 +484,7 @@ function kd_dist_sq(xq::Box{C}, box_size::Box{C}) where {C<:Integer}
     return dx*dx + dy*dy + dz*dz
 end
 
-function find_item(node::Union{Node{T, C}, Nothing}, disc::Int, item::T, size::Box{C}) where {T, C<:Integer}
+function find_item(node::Union{Node{T, C}, Nothing}, disc::Int, item::T, size::Box{C}) where {T, C<:Real}
     path = Node{T, C}[]
     curr = node
     d = disc
@@ -516,7 +516,7 @@ function find_item(node::Union{Node{T, C}, Nothing}, disc::Int, item::T, size::B
     return nothing, path
 end
 
-function del_element!(tree::Tree{T, C}, node::Node{T, C}, path::Vector{Node{T, C}}) where {T, C<:Integer}
+function del_element!(tree::Tree{T, C}, node::Node{T, C}, path::Vector{Node{T, C}}) where {T, C<:Real}
     if node.item === nothing
         if node.sons[1] === nothing && node.sons[2] === nothing
             if !isempty(path)
@@ -540,7 +540,7 @@ function del_element!(tree::Tree{T, C}, node::Node{T, C}, path::Vector{Node{T, C
     end
 end
 
-function delete!(tree::Tree{T, C}, item::T, size::Box{C}) where {T, C<:Integer}
+function delete!(tree::Tree{T, C}, item::T, size::Box{C}) where {T, C<:Real}
     node, path = find_item(tree.root, 1, item, size)
     if node !== nothing
         node.item = nothing
@@ -551,7 +551,7 @@ function delete!(tree::Tree{T, C}, item::T, size::Box{C}) where {T, C<:Integer}
     return false
 end
 
-function get_min_max_bounds(nodes::Vector{Tuple{T, Box{C}}}, median_node::Tuple{T, Box{C}}, disc::Int) where {T, C<:Integer}
+function get_min_max_bounds(nodes::Vector{Tuple{T, Box{C}}}, median_node::Tuple{T, Box{C}}, disc::Int) where {T, C<:Real}
     vert = ((disc - 1) % 3) + 1
     b_min = median_node[2][vert]
     b_max = median_node[2][vert + 3]
@@ -563,7 +563,7 @@ function get_min_max_bounds(nodes::Vector{Tuple{T, Box{C}}}, median_node::Tuple{
     return b_min, b_max
 end
 
-function build_node_recursive!(nodes::Vector{Tuple{T, Box{C}}}, disc::Int, level::Int, max_level::Int, mean::Float64) where {T, C<:Integer}
+function build_node_recursive!(nodes::Vector{Tuple{T, Box{C}}}, disc::Int, level::Int, max_level::Int, mean::Float64) where {T, C<:Real}
     num = length(nodes)
     if num == 0
         return nothing, 0
@@ -654,7 +654,7 @@ function build_node_recursive!(nodes::Vector{Tuple{T, Box{C}}}, disc::Int, level
     return node, count
 end
 
-function build_tree(items::Vector{T}, boxes::Vector{Box{C}}, max_level::Int=100000) where {T, C<:Integer}
+function build_tree(items::Vector{T}, boxes::Vector{Box{C}}, max_level::Int=100000) where {T, C<:Real}
     num = length(items)
     if num == 0
         return Tree{T, C}()
@@ -682,7 +682,7 @@ function build_tree(items::Vector{T}, boxes::Vector{Box{C}}, max_level::Int=1000
     return tree
 end
 
-function unload_items!(node::Union{Node{T, C}, Nothing}, items::Vector{T}, boxes::Vector{Box{C}}) where {T, C<:Integer}
+function unload_items!(node::Union{Node{T, C}, Nothing}, items::Vector{T}, boxes::Vector{Box{C}}) where {T, C<:Real}
     if node === nothing
         return
     end
@@ -694,7 +694,7 @@ function unload_items!(node::Union{Node{T, C}, Nothing}, items::Vector{T}, boxes
     unload_items!(node.sons[2], items, boxes)
 end
 
-function rebuild!(tree::Tree{T, C}) where {T, C<:Integer}
+function rebuild!(tree::Tree{T, C}) where {T, C<:Real}
     items = T[]
     boxes = Box{C}[]
     unload_items!(tree.root, items, boxes)
@@ -705,7 +705,7 @@ function rebuild!(tree::Tree{T, C}) where {T, C<:Integer}
     tree.extent = new_tree.extent
 end
 
-function badness(tree::Tree{T, C}) where {T, C<:Integer}
+function badness(tree::Tree{T, C}) where {T, C<:Real}
     factor3 = 0
     max_levels = 0
     
@@ -735,7 +735,7 @@ function badness(tree::Tree{T, C}) where {T, C<:Integer}
     println("balance ratio=$ratio (the closer to 1.0, the better), #of nodes with only one branch=$factor3 ($factor3_pct), max depth=$max_levels, dead=$(tree.dead_count) ($dead_pct)")
 end
 
-function node_cmp(a::Node{T, C}, b::Node{T, C}, disc::Int) where {T, C<:Integer}
+function node_cmp(a::Node{T, C}, b::Node{T, C}, disc::Int) where {T, C<:Real}
     val = a.size[disc] - b.size[disc]
     if val == 0
         new_disc = next_disc(disc)
@@ -753,13 +753,13 @@ function node_cmp(a::Node{T, C}, b::Node{T, C}, disc::Int) where {T, C<:Integer}
     return val >= 0
 end
 
-struct FindSave{T, C<:Integer}
+struct FindSave{T, C<:Real}
     node::Node{T, C}
     disc::Int
     state::Ref{Int}
 end
 
-function find_min_max_node!(t::Tree{T, C}, j::Int, kd_minval_node::Ref{Node{T, C}}, kd_minval_nodesdad::Ref{Node{T, C}}, dir::Ref{Int}, newj::Ref{Int}) where {T, C<:Integer}
+function find_min_max_node!(t::Tree{T, C}, j::Int, kd_minval_node::Ref{Node{T, C}}, kd_minval_nodesdad::Ref{Node{T, C}}, dir::Ref{Int}, newj::Ref{Int}) where {T, C<:Real}
     kd_data_tries = 0
     stack = FindSave{T, C}[
         FindSave{T, C}(kd_minval_node[], next_disc(j), Ref(-1))
@@ -859,7 +859,7 @@ end
 
 const delete_flip = Ref(false)
 
-function find_item_with_path(node::Union{Node{T, C}, Nothing}, disc::Int, item::T, size::Box{C}, path::Vector{Node{T, C}}) where {T, C<:Integer}
+function find_item_with_path(node::Union{Node{T, C}, Nothing}, disc::Int, item::T, size::Box{C}, path::Vector{Node{T, C}}) where {T, C<:Real}
     if node === nothing
         return nothing, path
     end
@@ -893,7 +893,7 @@ function find_item_with_path(node::Union{Node{T, C}, Nothing}, disc::Int, item::
     return nothing, path
 end
 
-function kd_do_delete!(t::Tree{T, C}, elem::Node{T, C}, j::Int, stats::DeleteStats) where {T, C<:Integer}
+function kd_do_delete!(t::Tree{T, C}, elem::Node{T, C}, j::Int, stats::DeleteStats) where {T, C<:Real}
     delete_flip[] = !delete_flip[]
 
     if elem.sons[1] === nothing && elem.sons[2] === nothing
@@ -938,7 +938,7 @@ function kd_do_delete!(t::Tree{T, C}, elem::Node{T, C}, j::Int, stats::DeleteSta
     return Q
 end
 
-function really_delete!(tree::Tree{T, C}, item::T, old_size::Box{C}) where {T, C<:Integer}
+function really_delete!(tree::Tree{T, C}, item::T, old_size::Box{C}) where {T, C<:Real}
     elem, path = find_item_with_path(tree.root, 1, item, old_size, Node{T, C}[])
     if elem === nothing
         return (-4, 0, 0)
@@ -964,7 +964,7 @@ function really_delete!(tree::Tree{T, C}, item::T, old_size::Box{C}) where {T, C
 end
 
 
-function serialize(tree::Tree{T, C}, filename::String, item_to_id::Function) where {T, C<:Integer}
+function serialize(tree::Tree{T, C}, filename::String, item_to_id::Function) where {T, C<:Real}
     count = tree.item_count - tree.dead_count
     if count <= 0
         error("Empty tree")
@@ -1004,7 +1004,7 @@ function serialize(tree::Tree{T, C}, filename::String, item_to_id::Function) whe
     close(io)
 end
 
-function get_bounds(tree::Tree{T, C})::Union{Box{C}, Nothing} where {T, C<:Integer}
+function get_bounds(tree::Tree{T, C})::Union{Box{C}, Nothing} where {T, C<:Real}
     if tree.root === nothing
         return nothing
     end
@@ -1034,7 +1034,7 @@ function get_bounds(tree::Tree{T, C})::Union{Box{C}, Nothing} where {T, C<:Integ
     return Box{C}((bounds...,))
 end
 
-function get_mmap_bounds(nodes::Vector{MmapNode{N, C}}, dim::Int=3)::Union{Box{C}, Nothing} where {N, C<:Integer}
+function get_mmap_bounds(nodes::Vector{MmapNode{N, C}}, dim::Int=3)::Union{Box{C}, Nothing} where {N, C<:Real}
     if isempty(nodes)
         return nothing
     end
@@ -1063,7 +1063,7 @@ function get_mmap_bounds(nodes::Vector{MmapNode{N, C}}, dim::Int=3)::Union{Box{C
     return NTuple{2*dim, C}((bounds...,))
 end
 
-function get_serialized_bounds(filename::String, CType::Type{C}, dim::Int=3)::Union{Box{C}, Nothing} where {C<:Integer}
+function get_serialized_bounds(filename::String, CType::Type{C}, dim::Int=3)::Union{Box{C}, Nothing} where {C<:Real}
     if !isfile(filename)
         return nothing
     end

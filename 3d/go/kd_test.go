@@ -307,3 +307,102 @@ func TestSerialize(t *testing.T) {
 
 	os.Remove("test_serialize.kdtree")
 }
+
+func TestFloat64Basic(t *testing.T) {
+	tree := Create[float64]()
+
+	box1 := Box[float64]{0.0, 0.0, 0.0, 10.5, 10.5, 10.5}
+	box2 := Box[float64]{20.25, 20.25, 20.25, 30.75, 30.75, 30.75}
+	box3 := Box[float64]{5.5, 5.5, 5.5, 15.5, 15.5, 15.5}
+
+	tree.Insert("item1", box1)
+	tree.Insert("item2", box2)
+	tree.Insert("item3", box3)
+
+	if tree.Count() != 3 {
+		t.Errorf("Expected count 3, got %d", tree.Count())
+	}
+
+	if !tree.IsMember("item2", box2) {
+		t.Error("item2 not found in tree")
+	}
+
+	searchArea := Box[float64]{0.0, 0.0, 0.0, 12.0, 12.0, 12.0}
+	gen := tree.Start(searchArea)
+	found := 0
+	for {
+		item, _, ok := gen.Next()
+		if !ok {
+			break
+		}
+		if item == "item1" || item == "item3" {
+			found++
+		}
+	}
+	if found != 2 {
+		t.Errorf("Expected 2 items in range search, got %d", found)
+	}
+
+	tree.Delete("item1", box1)
+	if tree.Count() != 2 {
+		t.Errorf("Expected count 2 after delete, got %d", tree.Count())
+	}
+
+	// Nearest neighbor with fractional coordinates
+	list := tree.Nearest(20.25, 20.25, 20.25, 1)
+	if len(list) != 1 || list[0].Item != "item2" {
+		t.Fatalf("Expected item2 as nearest, got %v", list)
+	}
+	if list[0].Dist > 1e-9 {
+		t.Errorf("Expected dist ~0, got %g", list[0].Dist)
+	}
+}
+
+func TestSerializeFloat64(t *testing.T) {
+	tree := Create[float64]()
+
+	tree.Insert("item1", Box[float64]{1.5, 1.5, 1.5, 1.5, 1.5, 1.5})
+	tree.Insert("item2", Box[float64]{-3.25, -3.25, -3.25, -3.25, -3.25, -3.25})
+	tree.Insert("item3", Box[float64]{100.125, 100.125, 100.125, 100.125, 100.125, 100.125})
+
+	bounds, err := tree.GetBounds()
+	if err != nil {
+		t.Fatalf("GetBounds failed: %v", err)
+	}
+	expectedBounds := Box[float64]{-3.25, -3.25, -3.25, 100.125, 100.125, 100.125}
+	if bounds != expectedBounds {
+		t.Fatalf("Expected bounds %v, got %v", expectedBounds, bounds)
+	}
+
+	err = tree.Serialize("test_serialize_float64.kdtree", func(item interface{}) uint64 {
+		switch item.(string) {
+		case "item1": return 1
+		case "item2": return 2
+		case "item3": return 3
+		}
+		return 0
+	})
+	if err != nil {
+		t.Fatalf("Serialize failed: %v", err)
+	}
+	defer os.Remove("test_serialize_float64.kdtree")
+
+	// Test GetSerializedBounds - this exercises the float64 decode path,
+	// which must reinterpret raw IEEE-754 bits rather than numerically
+	// casting from an int32/int64 value.
+	serBounds, err := GetSerializedBounds[float64]("test_serialize_float64.kdtree")
+	if err != nil {
+		t.Fatalf("GetSerializedBounds failed: %v", err)
+	}
+	if serBounds != expectedBounds {
+		t.Fatalf("Expected serialized bounds %v, got %v", expectedBounds, serBounds)
+	}
+
+	// Confirm exact round-trip of fractional values through serialization.
+	if serBounds[Left] != -3.25 {
+		t.Errorf("Expected exact round-trip of -3.25, got %v", serBounds[Left])
+	}
+	if serBounds[Right] != 100.125 {
+		t.Errorf("Expected exact round-trip of 100.125, got %v", serBounds[Right])
+	}
+}

@@ -990,12 +990,21 @@ void kd_print_path(void) /* this routine is for debug */
 	{
 		KDElem *elem;
 		elem = path_to_item[i];
+#if defined(COORD_F64)
+		printf("%d: \tElem: %ld [%lx] lo=%g hi=%g, other=%g, size= \t(%g\t%g\t%g\t%g\t%g\t%g)  Loson:%lx[%ld]  HiSon:%lx[%ld]\n",
+			   i,(long)elem->item, (unsigned long)elem,
+			   elem->lo_min_bound, elem->hi_max_bound, elem->other_bound,
+			   elem->size[0],elem->size[1],elem->size[2],elem->size[3],elem->size[4],elem->size[5],
+			   (long)elem->sons[0],elem->sons[0]?(long)elem->sons[0]->item:0,
+			   (long)elem->sons[1],elem->sons[1]?(long)elem->sons[1]->item:0);
+#else
 		printf("%d: \tElem: %ld [%lx] lo=%lld hi=%lld, other=%lld, size= \t(%lld\t%lld\t%lld\t%lld\t%lld\t%lld)  Loson:%lx[%ld]  HiSon:%lx[%ld]\n",
 			   i,(long)elem->item, (unsigned long)elem,
 			   (long long)elem->lo_min_bound, (long long)elem->hi_max_bound, (long long)elem->other_bound,
 			   (long long)elem->size[0],(long long)elem->size[1],(long long)elem->size[2],(long long)elem->size[3],(long long)elem->size[4],(long long)elem->size[5],
 			   (long)elem->sons[0],elem->sons[0]?(long)elem->sons[0]->item:0,
 			   (long)elem->sons[1],elem->sons[1]?(long)elem->sons[1]->item:0);
+#endif
 	}
 }
 
@@ -1022,7 +1031,7 @@ static KDElem *find_item(KDElem *elem, int disc, kd_generic item, kd_box size, i
  */
 {
     KDElem *result;
-    coord_t val; int new_disc, vert;
+    coord_t val; int new_disc, vert, idx;
 
     /* Compare current element against the one we are looking for */
     if (item == elem->item)
@@ -1052,11 +1061,11 @@ static KDElem *find_item(KDElem *elem, int disc, kd_generic item, kd_box size, i
 			}
 			if (val == 0) val = 1; /* Force upward if equal */
 		}
-		val = (val >= 0);
-		if (elem->sons[val])
+		idx = (val >= 0);
+		if (elem->sons[idx])
 		{
 			if (search_p) NEW_PATH(elem);
-			result = find_item(elem->sons[val], NEXTDISC(disc), item,
+			result = find_item(elem->sons[idx], NEXTDISC(disc), item,
 							   size, search_p, items_elem);
 			/* Bounds update if insert */
 			if (!search_p) bounds_update(elem, disc, size);
@@ -1075,7 +1084,7 @@ static KDElem *find_item(KDElem *elem, int disc, kd_generic item, kd_box size, i
 		        vert = NEXTDISC(disc) % 3;
 		        if( items_elem )
 		        {
-		                elem->sons[val] = items_elem;
+		                elem->sons[idx] = items_elem;
 		                items_elem->size[0] = size[0];
 		                items_elem->size[1] = size[1];
 		                items_elem->size[2] = size[2];
@@ -1090,13 +1099,13 @@ static KDElem *find_item(KDElem *elem, int disc, kd_generic item, kd_box size, i
 
 		        }
 		        else
-		                elem->sons[val] =
+		                elem->sons[idx] =
 		                        kd_new_node(item, size, size[vert], size[vert+3],
 		                                                ((NEXTDISC(disc)>=3) ? size[vert] : size[vert+3]),
 		                                                (KDElem *) 0, (KDElem *) 0);
 		        /* Bounds update */
 		        bounds_update(elem, disc, size);
-		        return elem->sons[val];
+		        return elem->sons[idx];
 		}    }
 }
 
@@ -1404,7 +1413,7 @@ static int  kd_neighbor(KDElem *node, kd_box Xq, int m, KDPriority *list, kd_box
 {
     KDState *realGen;
     coord_t p;
-    int d;
+    int d, i;
     register KDSave *top_elem;
     register KDElem *top_item;
     short hort,vert;
@@ -1582,10 +1591,10 @@ static int  kd_neighbor(KDElem *node, kd_box Xq, int m, KDPriority *list, kd_box
 	FREE(realGen);
 	/* Convert squared distances back to actual distances, and change
 	   KDElem * to kd_generic for the user's results. */
-	for(p=0;p<m;p++)
+	for(i=0;i<m;i++)
 	{
-		list[p].dist = sqrt(list[p].dist);
-		list[p].elem = (KDElem *)(list[p].elem)->item;
+		list[i].dist = sqrt(list[i].dist);
+		list[i].elem = (KDElem *)(list[i].elem)->item;
 	}
 	return kd_data_tries;
 }

@@ -8,7 +8,7 @@ import (
 )
 
 type Coord interface {
-	~int | ~int32 | ~int64
+	~int | ~int32 | ~int64 | ~float64
 }
 
 // Box defines a 2D bounding box [left, bottom, right, top]
@@ -739,6 +739,9 @@ func (t *Tree[T]) Nearest(x, y T, m int) []Priority {
 		valMin := int64(-9223372036854775808)
 		maxT = T(valMax)
 		minT = T(valMin)
+	case float64:
+		maxT = T(math.Inf(1))
+		minT = T(math.Inf(-1))
 	}
 
 	Bp := Box[T]{maxT, maxT, maxT, maxT}
@@ -951,6 +954,8 @@ func writeT[T Coord](file *os.File, val T) {
 		binary.Write(file, binary.LittleEndian, v)
 	case int:
 		binary.Write(file, binary.LittleEndian, int64(v))
+	case float64:
+		binary.Write(file, binary.LittleEndian, v)
 	}
 }
 
@@ -1054,6 +1059,8 @@ func sizeofT[T Coord]() int {
 		return 4
 	case int64, int:
 		return 8
+	case float64:
+		return 8
 	default:
 		return 8
 	}
@@ -1108,6 +1115,8 @@ func GetSerializedBounds[T Coord](filename string) (Box[T], error) {
 
 	dim := len(bounds) / 2
 	tSize := sizeofT[T]()
+	var zero T
+	_, isFloat := any(zero).(float64)
 	recordSize := int64(8 + (2*dim+3)*tSize + 16)
 	if info.Size()%recordSize != 0 {
 		return bounds, fmt.Errorf("Invalid file size")
@@ -1126,7 +1135,11 @@ func GetSerializedBounds[T Coord](filename string) (Box[T], error) {
 				var size Box[T]
 				for j := 0; j < 2*dim; j++ {
 					var val T
-					if tSize == 4 {
+					if isFloat {
+						var bits uint64
+						binary.Read(file, binary.LittleEndian, &bits)
+						val = T(math.Float64frombits(bits))
+					} else if tSize == 4 {
 						var val32 int32
 						binary.Read(file, binary.LittleEndian, &val32)
 						val = T(val32)
@@ -1157,7 +1170,11 @@ func GetSerializedBounds[T Coord](filename string) (Box[T], error) {
 		var size Box[T]
 		for j := 0; j < 2*dim; j++ {
 			var val T
-			if tSize == 4 {
+			if isFloat {
+				var bits uint64
+				binary.Read(file, binary.LittleEndian, &bits)
+				val = T(math.Float64frombits(bits))
+			} else if tSize == 4 {
 				var val32 int32
 				binary.Read(file, binary.LittleEndian, &val32)
 				val = T(val32)
@@ -1170,7 +1187,12 @@ func GetSerializedBounds[T Coord](filename string) (Box[T], error) {
 		}
 
 		var loMin, hiMax, other T
-		if tSize == 4 {
+		if isFloat {
+			var bits uint64
+			binary.Read(file, binary.LittleEndian, &bits); loMin = T(math.Float64frombits(bits))
+			binary.Read(file, binary.LittleEndian, &bits); hiMax = T(math.Float64frombits(bits))
+			binary.Read(file, binary.LittleEndian, &bits); other = T(math.Float64frombits(bits))
+		} else if tSize == 4 {
 			var val32 int32
 			binary.Read(file, binary.LittleEndian, &val32); loMin = T(val32)
 			binary.Read(file, binary.LittleEndian, &val32); hiMax = T(val32)

@@ -3,7 +3,7 @@ using Test
 import KDTree3D: serialize, insert!, search, nearest, count_items, is_member, hard_delete!, delete!, really_delete!, badness
 using Random
 
-for CType in (Int32, Int64, Int128)
+for CType in (Int32, Int64, Int128, Float64)
     @testset "KDTree3D Tests ($CType)" begin
         @testset "KDTree3D basic tests" begin
             tree = Tree{Int32, CType}()
