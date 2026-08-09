@@ -11,6 +11,122 @@ type Coord interface {
 	~int | ~int32 | ~int64 | ~float64
 }
 
+// Earth-related constants for use with HaversineDistance and VincentyDistance.
+const (
+	// EarthRadiusKm is the mean radius of the Earth in kilometers, suitable
+	// for use with HaversineDistance when treating the Earth as a perfect sphere.
+	EarthRadiusKm = 6371.0
+
+	// EarthSemiMajorAxisM is the WGS-84 semi-major axis of the Earth in meters,
+	// for use with VincentyDistance.
+	EarthSemiMajorAxisM = 6378137.0
+
+	// EarthFlattening is the WGS-84 flattening of the Earth, for use with
+	// VincentyDistance.
+	EarthFlattening = 1.0 / 298.257223563
+)
+
+// HaversineDistance computes the great-circle distance between two points
+// given in decimal degrees, on a perfect sphere of the given radius. It is
+// fast and approximate: it ignores the Earth's (or any body's) oblateness.
+// The returned distance is in the same units as radius.
+func HaversineDistance(lat1, lon1, lat2, lon2, radius float64) float64 {
+	toRad := math.Pi / 180.0
+	phi1 := lat1 * toRad
+	phi2 := lat2 * toRad
+	dphi := (lat2 - lat1) * toRad
+	dlambda := (lon2 - lon1) * toRad
+	a := math.Pow(math.Sin(dphi/2.0), 2) + math.Cos(phi1)*math.Cos(phi2)*math.Pow(math.Sin(dlambda/2.0), 2)
+	c := 2.0 * math.Atan2(math.Sqrt(a), math.Sqrt(1.0-a))
+	return radius * c
+}
+
+// VincentyDistance computes the geodesic distance between two points given
+// in decimal degrees, on an oblate spheroid described by semiMajorAxis and
+// flattening. It is slower than HaversineDistance but exact for the modeled
+// spheroid. Pass EarthSemiMajorAxisM and EarthFlattening to model the Earth
+// specifically using the WGS-84 reference ellipsoid.
+//
+// The underlying iterative algorithm (Vincenty's formula) is known to fail
+// to fully converge for nearly-antipodal points. An iteration cap guards
+// against this: rather than looping forever, VincentyDistance returns its
+// best-effort estimate after the cap is reached, so the result is always a
+// finite value, never a hang or a panic.
+func VincentyDistance(lat1, lon1, lat2, lon2, semiMajorAxis, flattening float64) float64 {
+	toRad := math.Pi / 180.0
+	a := semiMajorAxis
+	f := flattening
+	b := a * (1.0 - f)
+	lat1r := lat1 * toRad
+	lat2r := lat2 * toRad
+	l := (lon2 - lon1) * toRad
+	u1 := math.Atan((1.0 - f) * math.Tan(lat1r))
+	u2 := math.Atan((1.0 - f) * math.Tan(lat2r))
+	sinU1, cosU1 := math.Sin(u1), math.Cos(u1)
+	sinU2, cosU2 := math.Sin(u2), math.Cos(u2)
+
+	lambda := l
+	var sinSigma, cosSigma, sigma, cosSqAlpha, cos2SigmaM float64
+
+	for i := 0; i < 200; i++ {
+		sinLambda, cosLambda := math.Sin(lambda), math.Cos(lambda)
+		sinSigma = math.Sqrt(math.Pow(cosU2*sinLambda, 2) + math.Pow(cosU1*sinU2-sinU1*cosU2*cosLambda, 2))
+		if sinSigma == 0 {
+			return 0.0 // coincident points
+		}
+		cosSigma = sinU1*sinU2 + cosU1*cosU2*cosLambda
+		sigma = math.Atan2(sinSigma, cosSigma)
+		sinAlpha := cosU1 * cosU2 * sinLambda / sinSigma
+		cosSqAlpha = 1.0 - sinAlpha*sinAlpha
+		if cosSqAlpha != 0.0 {
+			cos2SigmaM = cosSigma - 2.0*sinU1*sinU2/cosSqAlpha
+		} else {
+			cos2SigmaM = 0.0
+		}
+		c := f / 16.0 * cosSqAlpha * (4.0 + f*(4.0-3.0*cosSqAlpha))
+		lambdaPrev := lambda
+		lambda = l + (1.0-c)*f*sinAlpha*(sigma+c*sinSigma*(cos2SigmaM+c*cosSigma*(-1.0+2.0*cos2SigmaM*cos2SigmaM)))
+		if math.Abs(lambda-lambdaPrev) < 1e-12 {
+			break
+		}
+	}
+	// After the loop (converged or hit the 200-iteration cap -- either way, compute
+	// and return the best estimate available; do not panic).
+	uSq := cosSqAlpha * (a*a - b*b) / (b * b)
+	bigA := 1.0 + uSq/16384.0*(4096.0+uSq*(-768.0+uSq*(320.0-175.0*uSq)))
+	bigB := uSq / 1024.0 * (256.0 + uSq*(-128.0+uSq*(74.0-47.0*uSq)))
+	deltaSigma := bigB * sinSigma * (cos2SigmaM + bigB/4.0*(cosSigma*(-1.0+2.0*cos2SigmaM*cos2SigmaM)-bigB/6.0*cos2SigmaM*(-3.0+4.0*sinSigma*sinSigma)*(-3.0+4.0*cos2SigmaM*cos2SigmaM)))
+	return b * bigA * (sigma - deltaSigma)
+}
+
+// DmsToDegrees converts a degrees/minutes/seconds angle to decimal degrees.
+// deg and min are always non-negative magnitudes; sign (+1 or -1) carries
+// the sign of the angle separately, which correctly represents angles
+// between -1 and 0 degrees (e.g. -0 deg 15 min) that signed-degrees-only
+// representations cannot.
+func DmsToDegrees[T Coord](sign int, deg, min T, sec float64) float64 {
+	return float64(sign) * (float64(deg) + float64(min)/60.0 + sec/3600.0)
+}
+
+// DegreesToDms converts decimal degrees to a degrees/minutes/seconds angle.
+// The returned deg and min are always non-negative magnitudes; sign (+1 or
+// -1) carries the sign of the angle separately, which correctly represents
+// angles between -1 and 0 degrees (e.g. -0 deg 15 min) that signed-degrees-
+// only representations cannot.
+func DegreesToDms[T Coord](degrees float64) (sign int, deg, min T, sec float64) {
+	if degrees < 0 {
+		sign = -1
+	} else {
+		sign = 1
+	}
+	a := math.Abs(degrees)
+	degF := math.Floor(a)
+	remMin := (a - degF) * 60.0
+	minF := math.Floor(remMin)
+	sec = (remMin - minF) * 60.0
+	return sign, T(degF), T(minF), sec
+}
+
 // Box defines a 2D bounding box [left, bottom, right, top]
 type Box[T Coord] [4]T
 

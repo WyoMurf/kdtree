@@ -1,7 +1,8 @@
 module KDTree3D
 
-export serialize, get_bounds, get_serialized_bounds, get_mmap_bounds, MmapNode, Tree, Box, insert!, delete!, count_items, is_member, hard_delete!, search, nearest, 
-       LEFT, BOTTOM, FLOOR, RIGHT, TOP, CEIL, build_tree, rebuild!, badness
+export serialize, get_bounds, get_serialized_bounds, get_mmap_bounds, MmapNode, Tree, Box, insert!, delete!, count_items, is_member, hard_delete!, search, nearest,
+       LEFT, BOTTOM, FLOOR, RIGHT, TOP, CEIL, build_tree, rebuild!, badness,
+       haversine_distance, vincenty_distance, dms_to_degrees, degrees_to_dms, EARTH_RADIUS_KM, EARTH_SEMI_MAJOR_AXIS_M, EARTH_FLATTENING
 
 const Box{C<:Real} = NTuple{6, C}
 const LEFT = 1
@@ -43,6 +44,132 @@ mutable struct Tree{T, C<:Real}
     function Tree{T, C}() where {T, C<:Real}
         new{T, C}(nothing, 0, 0, zeros(C, 6))
     end
+end
+
+# -----------------------------------------------------------------------------
+# General-purpose geo / angle utilities
+#
+# These have nothing to do with the kd-tree data structure itself; they are
+# exported alongside it purely as convenient general-purpose geo/angle math.
+# All lat/lon angle inputs and outputs are in degrees.
+# -----------------------------------------------------------------------------
+
+"""
+    haversine_distance(lat1, lon1, lat2, lon2, radius)
+
+Great-circle distance between two (lat, lon) points (given in degrees) on a
+perfect sphere of the given `radius`, using the Haversine formula. Fast and
+approximate: it models the body as a perfect sphere rather than an oblate
+spheroid. For higher accuracy on an ellipsoidal model (e.g. WGS-84 Earth),
+use [`vincenty_distance`](@ref) instead.
+"""
+function haversine_distance(lat1::Float64, lon1::Float64, lat2::Float64, lon2::Float64, radius::Float64)
+    to_rad = pi / 180.0
+    phi1 = lat1 * to_rad
+    phi2 = lat2 * to_rad
+    dphi = (lat2 - lat1) * to_rad
+    dlambda = (lon2 - lon1) * to_rad
+    a = sin(dphi / 2.0)^2 + cos(phi1) * cos(phi2) * sin(dlambda / 2.0)^2
+    c = 2.0 * atan(sqrt(a), sqrt(1.0 - a))
+    return radius * c
+end
+
+# WGS-84 values -- pass these to vincenty_distance when modeling Earth specifically.
+const EARTH_RADIUS_KM = 6371.0
+const EARTH_SEMI_MAJOR_AXIS_M = 6378137.0
+const EARTH_FLATTENING = 1.0 / 298.257223563
+
+"""
+    vincenty_distance(lat1, lon1, lat2, lon2, semi_major_axis, flattening)
+
+Distance between two (lat, lon) points (given in degrees) on an oblate
+spheroid defined by `semi_major_axis` and `flattening`, using Vincenty's
+iterative formula. Slower than [`haversine_distance`](@ref), but exact on the
+modeled spheroid rather than approximating a perfect sphere. For Earth
+specifically, pass the WGS-84 constants `EARTH_SEMI_MAJOR_AXIS_M` and
+`EARTH_FLATTENING`.
+
+Note: Vincenty's iteration is known to fail to fully converge for nearly
+antipodal points (a known limitation of the algorithm). The 200-iteration cap
+below exists so this still returns a best-effort finite value in that case,
+rather than looping forever.
+"""
+function vincenty_distance(lat1::Float64, lon1::Float64, lat2::Float64, lon2::Float64, semi_major_axis::Float64, flattening::Float64)
+    to_rad = pi / 180.0
+    a = semi_major_axis
+    f = flattening
+    b = a * (1.0 - f)
+    lat1_r = lat1 * to_rad
+    lat2_r = lat2 * to_rad
+    l = (lon2 - lon1) * to_rad
+    u1 = atan((1.0 - f) * tan(lat1_r))
+    u2 = atan((1.0 - f) * tan(lat2_r))
+    sin_u1, cos_u1 = sin(u1), cos(u1)
+    sin_u2, cos_u2 = sin(u2), cos(u2)
+
+    lambda = l
+    sin_sigma = 0.0
+    cos_sigma = 0.0
+    sigma = 0.0
+    cos_sq_alpha = 0.0
+    cos2_sigma_m = 0.0
+
+    for _ in 1:200
+        sin_lambda, cos_lambda = sin(lambda), cos(lambda)
+        sin_sigma = sqrt((cos_u2 * sin_lambda)^2 + (cos_u1 * sin_u2 - sin_u1 * cos_u2 * cos_lambda)^2)
+        if sin_sigma == 0.0
+            return 0.0  # coincident points
+        end
+        cos_sigma = sin_u1 * sin_u2 + cos_u1 * cos_u2 * cos_lambda
+        sigma = atan(sin_sigma, cos_sigma)
+        sin_alpha = cos_u1 * cos_u2 * sin_lambda / sin_sigma
+        cos_sq_alpha = 1.0 - sin_alpha^2
+        cos2_sigma_m = cos_sq_alpha != 0.0 ? cos_sigma - 2.0 * sin_u1 * sin_u2 / cos_sq_alpha : 0.0
+        c = f / 16.0 * cos_sq_alpha * (4.0 + f * (4.0 - 3.0 * cos_sq_alpha))
+        lambda_prev = lambda
+        lambda = l + (1.0 - c) * f * sin_alpha * (sigma + c * sin_sigma * (cos2_sigma_m + c * cos_sigma * (-1.0 + 2.0 * cos2_sigma_m^2)))
+        if abs(lambda - lambda_prev) < 1e-12
+            break
+        end
+    end
+    # after loop (converged or hit the 200-iteration cap -- either way, compute and return the best estimate, do not error)
+    u_sq = cos_sq_alpha * (a^2 - b^2) / b^2
+    big_a = 1.0 + u_sq / 16384.0 * (4096.0 + u_sq * (-768.0 + u_sq * (320.0 - 175.0 * u_sq)))
+    big_b = u_sq / 1024.0 * (256.0 + u_sq * (-128.0 + u_sq * (74.0 - 47.0 * u_sq)))
+    delta_sigma = big_b * sin_sigma * (cos2_sigma_m + big_b / 4.0 * (cos_sigma * (-1.0 + 2.0 * cos2_sigma_m^2) - big_b / 6.0 * cos2_sigma_m * (-3.0 + 4.0 * sin_sigma^2) * (-3.0 + 4.0 * cos2_sigma_m^2)))
+    return b * big_a * (sigma - delta_sigma)
+end
+
+"""
+    dms_to_degrees(sign, deg, min, sec) where {C<:Real}
+
+Combine a sign (`+1` or `-1`), non-negative degree/minute magnitudes, and a
+`Float64` seconds value into signed decimal degrees. Degrees and minutes are
+always non-negative magnitudes; `sign` carries the sign separately so that
+angles between -1 and 0 degrees (e.g. -0 deg 15 min) are representable, which
+signed-degrees-only cannot do.
+"""
+function dms_to_degrees(sign::Int, deg::C, min::C, sec::Float64) where {C<:Real}
+    return sign * (Float64(deg) + Float64(min) / 60.0 + sec / 3600.0)
+end
+
+"""
+    degrees_to_dms(::Type{C}, degrees) where {C<:Real}
+
+Split signed decimal `degrees` into `(sign, deg, min, sec)`, where `deg` and
+`min` are non-negative magnitudes of type `C` and `sec` is `Float64`. `C`
+must be given explicitly as the first argument since, unlike Rust or Go,
+Julia cannot infer a return-type parameter from nothing -- e.g. callers write
+`degrees_to_dms(Int32, 45.5)`.
+"""
+function degrees_to_dms(::Type{C}, degrees::Float64) where {C<:Real}
+    sign = degrees < 0 ? -1 : 1
+    a = abs(degrees)
+    deg_f = floor(a)
+    rem_min = (a - deg_f) * 60.0
+    min_f = floor(rem_min)
+    sec = (rem_min - min_f) * 60.0
+    return sign, C(deg_f), C(min_f), sec
 end
 
 next_disc(disc::Int) = (disc % 6) + 1

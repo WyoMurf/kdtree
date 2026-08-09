@@ -29,6 +29,22 @@ func main() {
 }
 ```
 
+## Geo & Angle Utilities
+
+Also exported, unrelated to the tree itself: great-circle distance calculators and DMS↔degrees conversion.
+
+```go
+// Fast, approximate (perfect sphere)
+km := kd.HaversineDistance(40.7128, -74.0060, 51.5074, -0.1278, kd.EarthRadiusKm)
+
+// Slow, exact (oblate spheroid) -- Earth's WGS-84 constants are provided for you
+m := kd.VincentyDistance(40.7128, -74.0060, 51.5074, -0.1278, kd.EarthSemiMajorAxisM, kd.EarthFlattening)
+
+// DMS <-> decimal degrees (sign carried separately so -0deg 15min is representable)
+degrees := kd.DmsToDegrees[int32](-1, 73, 58, 34.0)
+sign, deg, min, sec := kd.DegreesToDms[int32](degrees)
+```
+
 ## Testing
 
 Run the standard generic test suite using:

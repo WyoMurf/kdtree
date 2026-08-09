@@ -32,6 +32,22 @@ insert!(treef64, "itemf64", boxf64)
 ```
 
 
+## Geo & Angle Utilities
+
+Also exported, unrelated to the tree itself: great-circle distance calculators and DMS↔degrees conversion.
+
+```julia
+# Fast, approximate (perfect sphere)
+km = haversine_distance(40.7128, -74.0060, 51.5074, -0.1278, EARTH_RADIUS_KM)
+
+# Slow, exact (oblate spheroid) -- Earth's WGS-84 constants are provided for you
+m = vincenty_distance(40.7128, -74.0060, 51.5074, -0.1278, EARTH_SEMI_MAJOR_AXIS_M, EARTH_FLATTENING)
+
+# DMS <-> decimal degrees (sign carried separately so -0deg 15min is representable)
+degrees = dms_to_degrees(-1, Int32(73), Int32(58), 34.0)
+sign, deg, min, sec = degrees_to_dms(Int32, degrees)
+```
+
 ## Testing
 
 Run the test suite using standard Julia commands:

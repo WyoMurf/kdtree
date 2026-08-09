@@ -391,3 +391,64 @@ func TestSerializeFloat64(t *testing.T) {
 		t.Errorf("Expected exact round-trip of 100.125, got %v", serBounds[Right])
 	}
 }
+
+// testDmsRoundTrip runs the DegreesToDms -> DmsToDegrees round trip for
+// coordinate type T over a representative set of angles.
+func testDmsRoundTrip[T Coord](t *testing.T, angles []float64) {
+	for _, x := range angles {
+		sign, deg, min, sec := DegreesToDms[T](x)
+		got := DmsToDegrees[T](sign, deg, min, sec)
+		if math.Abs(got-x) > 1e-9 {
+			t.Errorf("round trip failed for %v: DegreesToDms->DmsToDegrees gave %v (sign=%d deg=%v min=%v sec=%v)",
+				x, got, sign, deg, min, sec)
+		}
+	}
+}
+
+func TestDmsRoundTrip(t *testing.T) {
+	angles := []float64{0.0, 0.25, -0.25, 45.5, -45.5, 89.9999, -89.9999, 123.456789, -123.456789, 180.0, -180.0, 90.0, -90.0}
+
+	t.Run("int32", func(t *testing.T) { testDmsRoundTrip[int32](t, angles) })
+	t.Run("int64", func(t *testing.T) { testDmsRoundTrip[int64](t, angles) })
+	t.Run("int", func(t *testing.T) { testDmsRoundTrip[int](t, angles) })
+	t.Run("float64", func(t *testing.T) { testDmsRoundTrip[float64](t, angles) })
+}
+
+func TestDmsNegativeNearZero(t *testing.T) {
+	// sign=-1, deg=0, min=15, sec=0.0 should decode to exactly -0.25 degrees.
+	got := DmsToDegrees[int](-1, 0, 15, 0.0)
+	if got != -0.25 {
+		t.Errorf("expected -0.25, got %v", got)
+	}
+
+	// And the reverse: -0.25 degrees should decode to sign=-1, deg=0, min=15, sec=0.0.
+	sign, deg, min, sec := DegreesToDms[int](-0.25)
+	if sign != -1 || deg != 0 || min != 15 || sec != 0.0 {
+		t.Errorf("expected sign=-1 deg=0 min=15 sec=0.0, got sign=%d deg=%v min=%v sec=%v", sign, deg, min, sec)
+	}
+}
+
+func TestHaversineDistanceQuarterGreatCircle(t *testing.T) {
+	radius := EarthRadiusKm
+	got := HaversineDistance(0.0, 0.0, 90.0, 0.0, radius)
+	want := radius * math.Pi / 2.0
+	if math.Abs(got-want) > 1e-9 {
+		t.Errorf("expected %v, got %v", want, got)
+	}
+}
+
+func TestVincentyDistanceAlongEquator(t *testing.T) {
+	delta := 10.0
+	got := VincentyDistance(0.0, 0.0, 0.0, delta, EarthSemiMajorAxisM, EarthFlattening)
+	want := EarthSemiMajorAxisM * delta * (math.Pi / 180.0)
+	if math.Abs(got-want) > 1e-6 {
+		t.Errorf("expected %v, got %v", want, got)
+	}
+}
+
+func TestVincentyDistanceNearAntipodal(t *testing.T) {
+	got := VincentyDistance(0.0, 0.0, 0.001, 179.999, EarthSemiMajorAxisM, EarthFlattening)
+	if math.IsNaN(got) || math.IsInf(got, 0) {
+		t.Errorf("expected a finite value, got %v", got)
+	}
+}

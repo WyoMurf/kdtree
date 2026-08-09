@@ -16,5 +16,6 @@ C/kd2lod
 C/viewer
 C/2d/test_*
 C/3d/test_*
+C/geo_utils_test
 parallel_times
 

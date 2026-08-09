@@ -174,3 +174,35 @@ for CType in (Int32, Int64, Int128, Float64)
 end
     end
 end
+
+@testset "Geo/Angle Utilities" begin
+    @testset "DMS round-trip ($CType)" for CType in (Int32, Int64, Int128, Float64)
+        # Negative-near-zero case: sign=-1, deg=0, min=15, sec=0.0 must decode to exactly -0.25
+        @test dms_to_degrees(-1, CType(0), CType(15), 0.0) == -0.25
+
+        test_values = [0.0, -0.25, 45.5, -45.5, 90.0, -90.0, 179.999, -179.999, 12.3456789, -0.0001]
+        for x in test_values
+            sign, deg, min, sec = degrees_to_dms(CType, x)
+            @test isapprox(dms_to_degrees(sign, deg, min, sec), x; atol=1e-9)
+        end
+    end
+
+    @testset "Haversine quarter great-circle" begin
+        for R in (1.0, EARTH_RADIUS_KM, 6378137.0)
+            d = haversine_distance(0.0, 0.0, 90.0, 0.0, R)
+            @test isapprox(d, R * pi / 2.0; atol=1e-9)
+        end
+    end
+
+    @testset "Vincenty equatorial exact circle" begin
+        delta = 10.0
+        d = vincenty_distance(0.0, 0.0, 0.0, delta, EARTH_SEMI_MAJOR_AXIS_M, EARTH_FLATTENING)
+        expected = EARTH_SEMI_MAJOR_AXIS_M * deg2rad(delta)
+        @test isapprox(d, expected; atol=1e-6)
+    end
+
+    @testset "Vincenty near-antipodal points don't hang or error" begin
+        d = vincenty_distance(0.0, 0.0, 0.001, 179.999, EARTH_SEMI_MAJOR_AXIS_M, EARTH_FLATTENING)
+        @test isfinite(d)
+    end
+end

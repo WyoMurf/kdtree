@@ -96,6 +96,127 @@ impl Coord for f64 {
     }
 }
 
+/// Mean radius of the Earth in kilometers, suitable for [`haversine_distance`].
+pub const EARTH_RADIUS_KM: f64 = 6371.0;
+
+/// WGS-84 semi-major axis of the Earth in meters, suitable for [`vincenty_distance`].
+pub const EARTH_SEMI_MAJOR_AXIS_M: f64 = 6378137.0;
+
+/// WGS-84 flattening of the Earth, suitable for [`vincenty_distance`].
+pub const EARTH_FLATTENING: f64 = 1.0 / 298.257223563;
+
+/// Great-circle distance between two lat/lon points (in degrees) on a perfect sphere of the
+/// given `radius`, using the haversine formula. This is fast and approximate: it assumes the
+/// body is a perfect sphere, so on Earth it can be off by up to ~0.5% compared to an ellipsoidal
+/// model such as [`vincenty_distance`].
+pub fn haversine_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64, radius: f64) -> f64 {
+    let to_rad = std::f64::consts::PI / 180.0;
+    let phi1 = lat1 * to_rad;
+    let phi2 = lat2 * to_rad;
+    let dphi = (lat2 - lat1) * to_rad;
+    let dlambda = (lon2 - lon1) * to_rad;
+    let a = (dphi / 2.0).sin().powi(2) + phi1.cos() * phi2.cos() * (dlambda / 2.0).sin().powi(2);
+    let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
+    radius * c
+}
+
+/// Distance between two lat/lon points (in degrees) on an oblate spheroid defined by
+/// `semi_major_axis` and `flattening`, computed via Vincenty's iterative inverse formula. This is
+/// slower than [`haversine_distance`] but exact for the chosen ellipsoid model. Pass
+/// [`EARTH_SEMI_MAJOR_AXIS_M`] and [`EARTH_FLATTENING`] to model the WGS-84 Earth specifically.
+///
+/// Known limitation: Vincenty's formula can fail to fully converge for nearly-antipodal points.
+/// This implementation caps iteration at 200 rounds so it still returns a finite best-effort
+/// value instead of hanging or panicking; the result's accuracy is not guaranteed in that regime.
+pub fn vincenty_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64, semi_major_axis: f64, flattening: f64) -> f64 {
+    let to_rad = std::f64::consts::PI / 180.0;
+    let a = semi_major_axis;
+    let f = flattening;
+    let b = a * (1.0 - f);
+    let (lat1_r, lat2_r) = (lat1 * to_rad, lat2 * to_rad);
+    let l = (lon2 - lon1) * to_rad;
+    let u1 = ((1.0 - f) * lat1_r.tan()).atan();
+    let u2 = ((1.0 - f) * lat2_r.tan()).atan();
+    let (sin_u1, cos_u1) = (u1.sin(), u1.cos());
+    let (sin_u2, cos_u2) = (u2.sin(), u2.cos());
+
+    let mut lambda = l;
+    let mut sin_sigma = 0.0;
+    let mut cos_sigma = 1.0;
+    let mut sigma = 0.0;
+    let mut cos_sq_alpha = 1.0;
+    let mut cos2_sigma_m = 0.0;
+
+    for _ in 0..200 {
+        let sin_lambda = lambda.sin();
+        let cos_lambda = lambda.cos();
+        sin_sigma = ((cos_u2 * sin_lambda).powi(2)
+            + (cos_u1 * sin_u2 - sin_u1 * cos_u2 * cos_lambda).powi(2))
+            .sqrt();
+        if sin_sigma == 0.0 {
+            // Coincident points.
+            return 0.0;
+        }
+        cos_sigma = sin_u1 * sin_u2 + cos_u1 * cos_u2 * cos_lambda;
+        sigma = sin_sigma.atan2(cos_sigma);
+        let sin_alpha = cos_u1 * cos_u2 * sin_lambda / sin_sigma;
+        cos_sq_alpha = 1.0 - sin_alpha * sin_alpha;
+        cos2_sigma_m = if cos_sq_alpha != 0.0 {
+            cos_sigma - 2.0 * sin_u1 * sin_u2 / cos_sq_alpha
+        } else {
+            0.0
+        };
+        let c = f / 16.0 * cos_sq_alpha * (4.0 + f * (4.0 - 3.0 * cos_sq_alpha));
+        let lambda_prev = lambda;
+        lambda = l
+            + (1.0 - c)
+                * f
+                * sin_alpha
+                * (sigma
+                    + c * sin_sigma
+                        * (cos2_sigma_m + c * cos_sigma * (-1.0 + 2.0 * cos2_sigma_m * cos2_sigma_m)));
+        if (lambda - lambda_prev).abs() < 1e-12 {
+            break;
+        }
+    }
+
+    let u_sq = cos_sq_alpha * (a * a - b * b) / (b * b);
+    let big_a = 1.0 + u_sq / 16384.0 * (4096.0 + u_sq * (-768.0 + u_sq * (320.0 - 175.0 * u_sq)));
+    let big_b = u_sq / 1024.0 * (256.0 + u_sq * (-128.0 + u_sq * (74.0 - 47.0 * u_sq)));
+    let delta_sigma = big_b
+        * sin_sigma
+        * (cos2_sigma_m
+            + big_b / 4.0
+                * (cos_sigma * (-1.0 + 2.0 * cos2_sigma_m * cos2_sigma_m)
+                    - big_b / 6.0
+                        * cos2_sigma_m
+                        * (-3.0 + 4.0 * sin_sigma * sin_sigma)
+                        * (-3.0 + 4.0 * cos2_sigma_m * cos2_sigma_m)));
+    b * big_a * (sigma - delta_sigma)
+}
+
+/// Converts a degrees/minutes/seconds angle into decimal degrees. `deg` and `min` are
+/// non-negative magnitudes and `sec` is always `f64`; the separate `sign` parameter (`+1` or
+/// `-1`) carries the sign of the overall angle. This is necessary to correctly represent angles
+/// between -1 and 0 degrees (e.g. a declination of -0 deg 15 min), which cannot be represented by
+/// a signed `deg` field alone.
+pub fn dms_to_degrees<C: Coord>(sign: i32, deg: C, min: C, sec: f64) -> f64 {
+    (sign as f64) * (deg.to_f64() + min.to_f64() / 60.0 + sec / 3600.0)
+}
+
+/// Converts decimal degrees into a degrees/minutes/seconds angle. Returns `(sign, deg, min, sec)`
+/// where `sign` is `+1` or `-1`, `deg` and `min` are non-negative magnitudes, and `sec` is always
+/// `f64`. See [`dms_to_degrees`] for why the sign is carried separately from the magnitude.
+pub fn degrees_to_dms<C: Coord>(degrees: f64) -> (i32, C, C, f64) {
+    let sign = if degrees < 0.0 { -1 } else { 1 };
+    let a = degrees.abs();
+    let deg_f = a.floor();
+    let rem_min = (a - deg_f) * 60.0;
+    let min_f = rem_min.floor();
+    let sec = (rem_min - min_f) * 60.0;
+    (sign, C::from_i32(deg_f as i32), C::from_i32(min_f as i32), sec)
+}
+
 // Box defines a 3D bounding box [left, bottom, floor, right, top, ceil]
 pub type KdBox<C = i32> = [C; 6];
 
@@ -1429,5 +1550,71 @@ mod tests {
     generate_tests!(i64, tests_i64);
     generate_tests!(i128, tests_i128);
     generate_tests!(f64, tests_f64);
+}
+
+#[cfg(test)]
+mod geo_math_tests {
+    use super::*;
+
+    fn assert_close(a: f64, b: f64, tol: f64) {
+        assert!((a - b).abs() < tol, "expected {} to be within {} of {}", a, tol, b);
+    }
+
+    macro_rules! generate_dms_tests {
+        ($t:ty, $mod_name:ident) => {
+            mod $mod_name {
+                use super::*;
+
+                #[test]
+                fn test_dms_round_trip() {
+                    let values: [f64; 6] = [0.0, 45.5, -45.5, 90.0, -90.0, 179.999999];
+                    for &x in values.iter() {
+                        let (sign, deg, min, sec) = degrees_to_dms::<$t>(x);
+                        let round_tripped = dms_to_degrees::<$t>(sign, deg, min, sec);
+                        assert!(
+                            (round_tripped - x).abs() < 1e-9,
+                            "round trip failed for {}: got {}",
+                            x,
+                            round_tripped
+                        );
+                    }
+                }
+
+                #[test]
+                fn test_dms_negative_near_zero() {
+                    // sign=-1, deg=0, min=15, sec=0.0 => -0.25 degrees exactly.
+                    let degrees = dms_to_degrees::<$t>(-1, <$t>::from_i32(0), <$t>::from_i32(15), 0.0);
+                    assert_eq!(degrees, -0.25);
+                }
+            }
+        };
+    }
+
+    generate_dms_tests!(i32, dms_i32);
+    generate_dms_tests!(i64, dms_i64);
+    generate_dms_tests!(i128, dms_i128);
+    generate_dms_tests!(f64, dms_f64);
+
+    #[test]
+    fn test_haversine_quarter_great_circle() {
+        let radius = 6371.0;
+        let dist = haversine_distance(0.0, 0.0, 90.0, 0.0, radius);
+        let expected = radius * std::f64::consts::PI / 2.0;
+        assert_close(dist, expected, 1e-9);
+    }
+
+    #[test]
+    fn test_vincenty_equator() {
+        let delta: f64 = 10.0;
+        let dist = vincenty_distance(0.0, 0.0, 0.0, delta, EARTH_SEMI_MAJOR_AXIS_M, EARTH_FLATTENING);
+        let expected = EARTH_SEMI_MAJOR_AXIS_M * delta.to_radians();
+        assert_close(dist, expected, 1e-6);
+    }
+
+    #[test]
+    fn test_vincenty_near_antipodal_is_finite() {
+        let dist = vincenty_distance(0.0, 0.0, 0.001, 179.999, EARTH_SEMI_MAJOR_AXIS_M, EARTH_FLATTENING);
+        assert!(dist.is_finite());
+    }
 }
 

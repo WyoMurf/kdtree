@@ -35,6 +35,14 @@ All language implementations adhere to the same underlying high-performance algo
 * **Soft Deletion:** Fast O(log N) item masking (flagging nodes as dead without structural disruption).
 * **Hard Deletion:** True recursive structural removal and tree re-balancing to reclaim memory and maintain search speed.
 
+## Geo & Angle Utilities
+
+Every language also ships a small set of general-purpose utilities that have nothing to do with the kd-tree itself, but are handy alongside it for spatial/astronomical data:
+
+* **`haversine_distance`** — fast, approximate great-circle distance between two lat/lon points (in degrees) on a perfect sphere of a given radius.
+* **`vincenty_distance`** — slower, iterative, but exact distance on an oblate spheroid (e.g. Earth's WGS-84 ellipsoid), given its semi-major axis and flattening. Earth's WGS-84 constants (`EARTH_RADIUS_KM`, `EARTH_SEMI_MAJOR_AXIS_M`, `EARTH_FLATTENING`) are provided in every language so you don't have to look them up.
+* **`dms_to_degrees` / `degrees_to_dms`** — convert between degrees/minutes/seconds and decimal degrees (`f64`). Degrees and minutes are typed using the same per-language coordinate type as the rest of the library (purely for API-family consistency — the math itself doesn't need it); seconds is always `f64`. Sign is carried separately from the degree/minute magnitudes so angles between −1° and 0° (e.g. a declination of −0° 15′) are representable.
+
 ## Precision & Bit-Widths
 
 Unlike standard algorithms that force you to choose between memory efficiency (32-bit) and overflow safety (64-bit) at the project level, this library parameterizes coordinate widths. All languages but Go can support 128-bit integer coordinates. When Go is upgraded to support 128-bit integers natively, we will upgrade that implementation. All four languages also support `float64`/`double` coordinates natively, for real-valued (non-integer) spatial data.

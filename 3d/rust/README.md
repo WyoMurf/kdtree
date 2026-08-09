@@ -32,6 +32,25 @@ fn main() {
 }
 ```
 
+## Geo & Angle Utilities
+
+Also exported, unrelated to the tree itself: great-circle distance calculators and DMS↔degrees conversion.
+
+```rust
+use kdtree3d::{haversine_distance, vincenty_distance, dms_to_degrees, degrees_to_dms,
+               EARTH_RADIUS_KM, EARTH_SEMI_MAJOR_AXIS_M, EARTH_FLATTENING};
+
+// Fast, approximate (perfect sphere)
+let km = haversine_distance(40.7128, -74.0060, 51.5074, -0.1278, EARTH_RADIUS_KM);
+
+// Slow, exact (oblate spheroid) -- Earth's WGS-84 constants are provided for you
+let m = vincenty_distance(40.7128, -74.0060, 51.5074, -0.1278, EARTH_SEMI_MAJOR_AXIS_M, EARTH_FLATTENING);
+
+// DMS <-> decimal degrees (sign carried separately so -0deg 15min is representable)
+let degrees = dms_to_degrees::<i32>(-1, 73, 58, 34.0);
+let (sign, deg, min, sec) = degrees_to_dms::<i32>(degrees);
+```
+
 ## Testing
 
 Run the test suite using standard cargo commands:
