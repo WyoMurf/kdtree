@@ -208,22 +208,18 @@ function hard_delete_recursive!(node::Union{Node{T, C}, Nothing}, disc::Int, ite
     end
 
     val = size[disc] - node.size[disc]
+    next = next_disc(disc)
+
     if val == 0
-        ndisc = next_disc(disc)
-        while ndisc != disc
-            val = size[ndisc] - node.size[ndisc]
-            if val != 0
-                break
-            end
-            ndisc = next_disc(ndisc)
-        end
-        if val == 0
-            val = 1
-        end
+        # Same tie ambiguity as `find_recursive` (see there for why) -- ask it
+        # which side actually holds the item instead of guessing from this
+        # node's other axes.
+        child_idx = find_recursive(node.sons[1], next, item, size) ? 1 : 2
+    else
+        child_idx = val >= 0 ? 2 : 1
     end
 
-    child_idx = val >= 0 ? 2 : 1
-    node.sons[child_idx] = hard_delete_recursive!(node.sons[child_idx], next_disc(disc), item, size, tree)
+    node.sons[child_idx] = hard_delete_recursive!(node.sons[child_idx], next, item, size, tree)
     return node
 end
 
@@ -284,18 +280,17 @@ function find_recursive(elem::Union{Node{T, C}, Nothing}, disc::Int, item::T, si
     end
 
     val = size[disc] - elem.size[disc]
+
     if val == 0
-        ndisc = next_disc(disc)
-        while ndisc != disc
-            val = size[ndisc] - elem.size[ndisc]
-            if val != 0
-                break
-            end
-            ndisc = next_disc(ndisc)
-        end
-        if val == 0
-            val = 1
-        end
+        # Exact tie on this node's split axis: the item may legitimately live in
+        # either subtree. We can't resolve this the way insert! does (comparing
+        # this node's *other* axes), because kd_do_delete!'s promotion step can
+        # later swap a different item into this exact tree position, changing
+        # those other-axis values without changing which subtree the original
+        # item was placed in -- that would silently misroute this search. Try
+        # both sides instead of guessing.
+        return find_recursive(elem.sons[1], next_disc(disc), item, size) ||
+               find_recursive(elem.sons[2], next_disc(disc), item, size)
     end
 
     child_idx = val >= 0 ? 2 : 1
@@ -438,18 +433,24 @@ function find_item_with_path(node::Union{Node{T, C}, Nothing}, disc::Int, item::
     end
 
     val = size[disc] - node.size[disc]
+    next = next_disc(disc)
+
     if val == 0
-        ndisc = next_disc(disc)
-        while ndisc != disc
-            val = size[ndisc] - node.size[ndisc]
-            if val != 0
-                break
-            end
-            ndisc = next_disc(ndisc)
+        # Same tie ambiguity as `find_recursive` -- try both sides instead of
+        # guessing via this node's other axes, since kd_do_delete!'s promotion
+        # step can swap a different item into this position later. Each
+        # attempt pushes onto its own fresh copy of the *original* path, so a
+        # failed attempt's push never leaks into the path returned by
+        # whichever side actually holds the item.
+        lo_path = copy(path)
+        push!(lo_path, node)
+        found, new_path = find_item_with_path(node.sons[1], next, item, size, lo_path)
+        if found !== nothing
+            return found, new_path
         end
-        if val == 0
-            val = 1
-        end
+        hi_path = copy(path)
+        push!(hi_path, node)
+        return find_item_with_path(node.sons[2], next, item, size, hi_path)
     end
 
     child_idx = val >= 0 ? 2 : 1
@@ -457,7 +458,7 @@ function find_item_with_path(node::Union{Node{T, C}, Nothing}, disc::Int, item::
     if node.sons[child_idx] !== nothing
         new_path = copy(path)
         push!(new_path, node)
-        return find_item_with_path(node.sons[child_idx], next_disc(disc), item, size, new_path)
+        return find_item_with_path(node.sons[child_idx], next, item, size, new_path)
     end
 
     return nothing, path

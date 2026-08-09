@@ -1047,9 +1047,63 @@ static KDElem *find_item(KDElem *elem, int disc, kd_generic item, kd_box size, i
 	{
 		/* Determine successor */
 		val = size[disc] - elem->size[disc];
+
+		if (search_p && val == 0)
+		{
+			/* Exact tie on this node's split axis: the item may legitimately
+			 * live in either subtree. We can't resolve this the way insertion
+			 * does below (comparing this node's *other* axes), because
+			 * kd_do_delete's promotion step can later swap a different item
+			 * into this exact tree position, changing those other-axis values
+			 * without changing which subtree the original item was placed in
+			 * -- that would silently misroute this search. Try both sides
+			 * instead of guessing.
+			 *
+			 * path_reset is a global "start over" flag meant for the *next
+			 * independent* top-level find_item() call, not for a sibling
+			 * retry within this same search -- a failed attempt below can
+			 * set it (via LAST_PATH at a true dead end), so after each
+			 * failed attempt we restore path_length to how it stood before
+			 * that attempt and clear path_reset ourselves before trying the
+			 * other side, instead of letting NEW_PATH wipe our still-valid
+			 * ancestor chain on the next push.
+			 */
+			/* If a reset is still pending from an earlier top-level call
+			 * (nothing has pushed onto path_to_item yet this search, e.g.
+			 * this tie is the very first comparison at the root), resolve
+			 * it now -- otherwise saved_len would capture the *stale*
+			 * pre-reset path_length instead of the correct starting depth,
+			 * and every push/restore below would be off by that stale
+			 * amount, corrupting path_length (and the disc/parent it
+			 * yields to kd_really_delete) for the rest of this search. */
+			if (path_reset) { path_length = 0; path_reset = 0; }
+			int saved_len = path_length;
+
+			if (elem->sons[KD_LOSON])
+			{
+				NEW_PATH(elem);
+				result = find_item(elem->sons[KD_LOSON], NEXTDISC(disc), item,
+								   size, search_p, items_elem);
+				if (result) return result;
+				path_length = saved_len;
+				path_reset = 0;
+			}
+			if (elem->sons[KD_HISON])
+			{
+				NEW_PATH(elem);
+				result = find_item(elem->sons[KD_HISON], NEXTDISC(disc), item,
+								   size, search_p, items_elem);
+				if (result) return result;
+				path_length = saved_len;
+				path_reset = 0;
+			}
+			LAST_PATH;
+			return (KDElem *) 0;
+		}
+
 		if (val == 0)
 		{
-			/* Cyclical comparison required */
+			/* Cyclical comparison required (insert path only, at this point) */
 			new_disc = NEXTDISC(disc);
 			while (new_disc != disc)
 			{
@@ -1231,7 +1285,7 @@ kd_status kd_really_delete(kd_tree theTree, kd_generic data, kd_box old_size, in
 	int j;
 	kddel_number_tried = 0;
 	kddel_number_deld = 1;
-	
+
     elem = find_item(real_tree->tree, 0, data, old_size, 1,0);
     if (elem)
 	{

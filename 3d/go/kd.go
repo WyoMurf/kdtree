@@ -99,6 +99,9 @@ func (t *Tree[T]) Insert(data interface{}, size Box[T]) {
 }
 
 func (t *Tree[T]) findItem(elem *Node[T], disc int, item interface{}, size Box[T], searchP bool) *Node[T] {
+	if elem == nil {
+		return nil
+	}
 	if item == elem.Item {
 		if searchP {
 			return elem
@@ -107,7 +110,23 @@ func (t *Tree[T]) findItem(elem *Node[T], disc int, item interface{}, size Box[T
 	}
 
 	val := size[disc] - elem.Size[disc]
+
+	if searchP && val == 0 {
+		// Exact tie on this node's split axis: the item may legitimately live in
+		// either subtree. We can't resolve this the way insertion does below
+		// (comparing this node's *other* axes), because kdDoDelete's promotion
+		// step can later swap a different item into this exact tree position,
+		// changing those other-axis values without changing which subtree the
+		// original item was placed in -- that would silently misroute this
+		// search. Try both sides instead of guessing.
+		if res := t.findItem(elem.Sons[0], nextDisc(disc), item, size, searchP); res != nil {
+			return res
+		}
+		return t.findItem(elem.Sons[1], nextDisc(disc), item, size, searchP)
+	}
+
 	if val == 0 {
+		// Cyclical comparison required (insert path only, at this point)
 		ndisc := nextDisc(disc)
 		for ndisc != disc {
 			val = size[ndisc] - elem.Size[ndisc]
@@ -327,26 +346,23 @@ func (t *Tree[T]) hardDeleteRecursive(node *Node[T], disc int, item interface{},
 	}
 
 	val := size[disc] - node.Size[disc]
-	if val == 0 {
-		ndisc := nextDisc(disc)
-		for ndisc != disc {
-			val = size[ndisc] - node.Size[ndisc]
-			if val != 0 {
-				break
-			}
-			ndisc = nextDisc(ndisc)
-		}
-		if val == 0 {
-			val = 1
-		}
-	}
+	next := nextDisc(disc)
 
 	childIdx := 0
-	if val >= 0 {
+	if val == 0 {
+		// Same tie ambiguity as `findItem` (see there for why) -- ask it which
+		// side actually holds the item instead of guessing from this node's
+		// other axes.
+		if t.findItem(node.Sons[0], next, item, size, true) != nil {
+			childIdx = 0
+		} else {
+			childIdx = 1
+		}
+	} else if val >= 0 {
 		childIdx = 1
 	}
 
-	node.Sons[childIdx] = t.hardDeleteRecursive(node.Sons[childIdx], nextDisc(disc), item, size)
+	node.Sons[childIdx] = t.hardDeleteRecursive(node.Sons[childIdx], next, item, size)
 	return node
 }
 
@@ -801,18 +817,18 @@ func (t *Tree[T]) findItemWithPath(node *Node[T], disc int, item interface{}, si
 	}
 
 	val := size[disc] - node.Size[disc]
+
 	if val == 0 {
-		ndisc := nextDisc(disc)
-		for ndisc != disc {
-			val = size[ndisc] - node.Size[ndisc]
-			if val != 0 {
-				break
-			}
-			ndisc = nextDisc(ndisc)
+		// Same tie ambiguity as `findItem` -- try both sides instead of
+		// guessing via this node's other axes, since kdDoDelete's promotion
+		// step can swap a different item into this position later. append
+		// on the unchanged `path` for each attempt, so a failed attempt's
+		// pushes (possibly sharing backing storage) never leak into the
+		// path returned by whichever side actually holds the item.
+		if found, newPath := t.findItemWithPath(node.Sons[0], nextDisc(disc), item, size, append(path, node)); found != nil {
+			return found, newPath
 		}
-		if val == 0 {
-			val = 1
-		}
+		return t.findItemWithPath(node.Sons[1], nextDisc(disc), item, size, append(path, node))
 	}
 
 	childIdx := 0

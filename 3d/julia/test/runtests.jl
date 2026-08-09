@@ -117,8 +117,59 @@ for CType in (Int32, Int64, Int128, Float64)
 
             # Test get_serialized_bounds
             @test get_serialized_bounds(filename, CType, 3) == (CType(5), CType(5), CType(5), CType(20), CType(20), CType(20))
-            
+
             rm(filename)
+        end
+
+        @testset "Tie-break regression ($CType)" begin
+            # Regression coverage for a bug where hard_delete!'s promote-and-cascade
+            # step could swap a different item into a node's tree position, changing
+            # the "other axis" values used to break an exact coordinate tie --
+            # silently misrouting later searches for an unrelated, never-deleted item.
+            # Interleaving inserts and hard-deletes at this seed reliably reproduced
+            # the bug before find_recursive/hard_delete_recursive! were fixed to check
+            # (read-only) which side actually holds an item on a tie, instead of
+            # guessing from the current node's other axes.
+            state = Ref(UInt32(42))
+            lcg_next() = (state[] = state[] * UInt32(1664525) + UInt32(1013904223); Int32(state[] >> 16))
+            function lcg_range(maxv::Int32)
+                v = lcg_next() % maxv
+                v < 0 ? v + maxv : v
+            end
+            rand_box() = begin
+                left = lcg_range(Int32(4001)) - Int32(2000)
+                bottom = lcg_range(Int32(4001)) - Int32(2000)
+                floor = lcg_range(Int32(4001)) - Int32(2000)
+                (CType(left), CType(bottom), CType(floor),
+                 CType(left + lcg_range(Int32(50))), CType(bottom + lcg_range(Int32(50))), CType(floor + lcg_range(Int32(50))))
+            end
+
+            n = 12000
+            tree = Tree{Int, CType}()
+            boxes = Vector{Box{CType}}(undef, n)
+            deleted = falses(n)
+
+            for i in 1:n
+                b = rand_box()
+                boxes[i] = b
+                insert!(tree, i, b)
+
+                if i % 3 == 0 && i > 1
+                    victim = Int(lcg_range(Int32(i - 1))) + 1
+                    if !deleted[victim] && hard_delete!(tree, victim, boxes[victim])
+                        deleted[victim] = true
+                    end
+                end
+            end
+
+            all_found = true
+            for j in 1:n
+                if !deleted[j] && !is_member(tree, j, boxes[j])
+                    all_found = false
+                    break
+                end
+            end
+            @test all_found
         end
 end
     end
