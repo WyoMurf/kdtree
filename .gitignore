@@ -14,5 +14,7 @@ C/csv2fits
 C/fits2kd
 C/kd2lod
 C/viewer
+C/2d/test_*
+C/3d/test_*
 parallel_times
 
