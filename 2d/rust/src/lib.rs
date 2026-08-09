@@ -223,6 +223,37 @@ impl<T: PartialEq + Clone, C: Coord> Tree<T, C> {
         true
     }
 
+    /// Read-only membership check used to disambiguate an exact tie in
+    /// `find_recursive`/`hard_delete_recursive`/`really_delete_recursive` without
+    /// needing two overlapping `&mut` borrows of the same node's two children --
+    /// Rust's borrow checker can't prove `sons[0]` and `sons[1]` are disjoint across
+    /// two sequential recursive calls each returning a reference tied to the same
+    /// lifetime, so the mutable search below only ever descends into one side once
+    /// this has determined which side actually holds the item.
+    fn contains_recursive(node: Option<&Node<T, C>>, disc: usize, item: &T, size: &KdBox<C>) -> bool {
+        let node = match node {
+            Some(n) => n,
+            None => return false,
+        };
+
+        if let Some(ref node_item) = node.item {
+            if *item == *node_item {
+                return true;
+            }
+        }
+
+        let val = size[disc] - node.size[disc];
+        let next = next_disc(disc);
+
+        if val == C::zero() {
+            return Self::contains_recursive(node.sons[0].as_deref(), next, item, size)
+                || Self::contains_recursive(node.sons[1].as_deref(), next, item, size);
+        }
+
+        let child_idx = if val > C::zero() { 1 } else { 0 };
+        Self::contains_recursive(node.sons[child_idx].as_deref(), next, item, size)
+    }
+
     fn find_recursive<'a>(
         elem: Option<&'a mut Box<Node<T, C>>>,
         disc: usize,
@@ -237,23 +268,20 @@ impl<T: PartialEq + Clone, C: Coord> Tree<T, C> {
             }
         }
 
-        let mut val = size[disc] - node.size[disc];
-        if val == C::zero() {
-            let mut ndisc = next_disc(disc);
-            while ndisc != disc {
-                val = size[ndisc] - node.size[ndisc];
-                if val != C::zero() {
-                    break;
-                }
-                ndisc = next_disc(ndisc);
-            }
-            if val == C::zero() {
-                val = C::from_i32(1);
-            }
-        }
+        let val = size[disc] - node.size[disc];
+        let next = next_disc(disc);
 
-        let child_idx = if val >= C::zero() { 1 } else { 0 };
-        Self::find_recursive(node.sons[child_idx].as_mut(), next_disc(disc), item, size)
+        let child_idx = if val == C::zero() {
+            // Exact tie on this node's split axis: the item may legitimately live in
+            // either subtree. We can't resolve this the way `insert` does (comparing
+            // this node's *other* axes), because delete's promotion step can later
+            // swap a different item into this position, changing those other-axis
+            // values without changing which subtree the original item was placed in.
+            // Check (read-only) which side actually holds it rather than guessing.
+            if Self::contains_recursive(node.sons[0].as_deref(), next, item, size) { 0 } else { 1 }
+        } else if val > C::zero() { 1 } else { 0 };
+
+        Self::find_recursive(node.sons[child_idx].as_mut(), next, item, size)
     }
 
     pub fn hard_delete(&mut self, item: &T, size: &KdBox<C>) -> bool {
@@ -311,23 +339,17 @@ impl<T: PartialEq + Clone, C: Coord> Tree<T, C> {
             return Some(node);
         }
 
-        let mut val = size[disc] - node.size[disc];
-        if val == C::zero() {
-            let mut ndisc = next_disc(disc);
-            while ndisc != disc {
-                val = size[ndisc] - node.size[ndisc];
-                if val != C::zero() {
-                    break;
-                }
-                ndisc = next_disc(ndisc);
-            }
-            if val == C::zero() {
-                val = C::from_i32(1);
-            }
-        }
+        let val = size[disc] - node.size[disc];
+        let next = next_disc(disc);
 
-        let child_idx = if val >= C::zero() { 1 } else { 0 };
-        node.sons[child_idx] = Self::hard_delete_recursive(node.sons[child_idx].take(), next_disc(disc), item, size, item_count, delete_flip);
+        let child_idx = if val == C::zero() {
+            // Same tie ambiguity as `find_recursive` (see there for why) -- ask it
+            // which side actually holds the item instead of guessing from this
+            // node's other axes.
+            if Self::contains_recursive(node.sons[0].as_deref(), next, item, size) { 0 } else { 1 }
+        } else if val > C::zero() { 1 } else { 0 };
+
+        node.sons[child_idx] = Self::hard_delete_recursive(node.sons[child_idx].take(), next, item, size, item_count, delete_flip);
         Some(node)
     }
 
@@ -396,23 +418,17 @@ impl<T: PartialEq + Clone, C: Coord> Tree<T, C> {
             return Some(node);
         }
 
-        let mut val = size[disc] - node.size[disc];
-        if val == C::zero() {
-            let mut ndisc = next_disc(disc);
-            while ndisc != disc {
-                val = size[ndisc] - node.size[ndisc];
-                if val != C::zero() {
-                    break;
-                }
-                ndisc = next_disc(ndisc);
-            }
-            if val == C::zero() {
-                val = C::from_i32(1);
-            }
-        }
+        let val = size[disc] - node.size[disc];
+        let next = next_disc(disc);
 
-        let child_idx = if val >= C::zero() { 1 } else { 0 };
-        node.sons[child_idx] = Self::really_delete_recursive(node.sons[child_idx].take(), next_disc(disc), item, size, tries, dels, delete_flip);
+        let child_idx = if val == C::zero() {
+            // Same tie ambiguity as `find_recursive` (see there for why) -- ask it
+            // which side actually holds the item instead of guessing from this
+            // node's other axes.
+            if Self::contains_recursive(node.sons[0].as_deref(), next, item, size) { 0 } else { 1 }
+        } else if val > C::zero() { 1 } else { 0 };
+
+        node.sons[child_idx] = Self::really_delete_recursive(node.sons[child_idx].take(), next, item, size, tries, dels, delete_flip);
         Some(node)
     }
 
@@ -1218,23 +1234,25 @@ mod tests {
                     let mut tree = Tree::<usize, $t>::new();
                     let mut boxes = Vec::new();
 
-                    // NOTE: kept at 1000 items / 250 deletions rather than the larger
-                    // sizes used elsewhere in this file. The promote-and-cascade delete
-                    // shared by `hard_delete`/`really_delete` can, at larger N, hit an
-                    // exact coordinate tie at the axis being promoted; `find_recursive`'s
-                    // tie-break then falls back to other axes using the *promoted*
-                    // node's unrelated coordinates rather than the original deleted
-                    // node's, which can misroute later searches. This is a pre-existing
-                    // edge case in the promotion algorithm (present in the 3D crate too,
-                    // and not introduced by this port) that is not fixed here; this test
-                    // is sized to stay well clear of it.
-                    for i in 0..1000 {
+                    // Regression coverage for a tie-break bug in the promote-and-cascade
+                    // delete shared by `hard_delete`/`really_delete`: on an exact
+                    // coordinate tie, `find_recursive` used to fall back to comparing
+                    // *this node's* other axes to pick a side -- but delete's promotion
+                    // step can swap a different item into a node's position later,
+                    // changing those other-axis values without changing which subtree
+                    // the original item was placed in, silently misrouting later
+                    // searches and making an unrelated, never-deleted item unfindable.
+                    // Fixed by having ties check (read-only) which side actually holds
+                    // the item instead of guessing. Kept at 3000 items / 750 interleaved
+                    // deletions -- the scale that reliably reproduced the bug before the
+                    // fix -- specifically to catch a regression.
+                    for i in 0..3000 {
                         let b = rand_box(&mut rng);
                         boxes.push(b);
                         tree.insert(i, b);
                     }
 
-                    assert_eq!(tree.count(), 1000);
+                    assert_eq!(tree.count(), 3000);
 
                     // Deleting an item that was never inserted must report NotFound and
                     // must not touch the tries/dels counters or the item count.
@@ -1248,9 +1266,9 @@ mod tests {
                     assert_eq!(status, Status::NotFound);
                     assert_eq!(tries, 0);
                     assert_eq!(dels, 0);
-                    assert_eq!(tree.count(), 1000);
+                    assert_eq!(tree.count(), 3000);
 
-                    for i in 0..250 {
+                    for i in 0..750 {
                         let (status, tries, dels) = tree.really_delete(&i, &boxes[i]);
                         assert_eq!(status, Status::Ok);
                         assert!(tries >= 0);
@@ -1258,9 +1276,9 @@ mod tests {
                         assert!(!tree.is_member(&i, &boxes[i]));
                     }
 
-                    assert_eq!(tree.count(), 750);
+                    assert_eq!(tree.count(), 2250);
 
-                    for i in 250..1000 {
+                    for i in 750..3000 {
                         assert!(tree.is_member(&i, &boxes[i]), "item {} should still be present", i);
                     }
                 }

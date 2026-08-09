@@ -293,23 +293,24 @@ impl<T: PartialEq + Clone, C: Coord> Tree<T, C> {
             }
         }
 
-        let mut val = size[disc] - node.size[disc];
+        let val = size[disc] - node.size[disc];
+        let next = next_disc(disc);
+
         if val == C::zero() {
-            let mut ndisc = next_disc(disc);
-            while ndisc != disc {
-                val = size[ndisc] - node.size[ndisc];
-                if val != C::zero() {
-                    break;
-                }
-                ndisc = next_disc(ndisc);
+            // Exact tie on this node's split axis: the item may legitimately live in
+            // either subtree. We can't resolve this the way `insert` does (comparing
+            // this node's *other* axes), because delete's promotion step can later
+            // swap a different item into this position, changing those other-axis
+            // values without changing which subtree the original item was placed in.
+            // Search both rather than guessing.
+            if let Some(found) = self.find_recursive(node.sons[0], next, item, size) {
+                return Some(found);
             }
-            if val == C::zero() {
-                val = C::from_i32(1);
-            }
+            return self.find_recursive(node.sons[1], next, item, size);
         }
 
-        let child_idx = if val >= C::zero() { 1 } else { 0 };
-        self.find_recursive(node.sons[child_idx], next_disc(disc), item, size)
+        let child_idx = if val > C::zero() { 1 } else { 0 };
+        self.find_recursive(node.sons[child_idx], next, item, size)
     }
 
     /// Checks if the given item is stored in the tree with the specified bounding box.
@@ -357,23 +358,17 @@ impl<T: PartialEq + Clone, C: Coord> Tree<T, C> {
             return q_opt;
         }
 
-        let mut val = size[disc] - self.arena[elem_idx].size[disc];
-        if val == C::zero() {
-            let mut ndisc = next_disc(disc);
-            while ndisc != disc {
-                val = size[ndisc] - self.arena[elem_idx].size[ndisc];
-                if val != C::zero() {
-                    break;
-                }
-                ndisc = next_disc(ndisc);
-            }
-            if val == C::zero() {
-                val = C::from_i32(1);
-            }
-        }
+        let val = size[disc] - self.arena[elem_idx].size[disc];
+        let next = next_disc(disc);
 
-        let child_idx = if val >= C::zero() { 1 } else { 0 };
-        self.arena[elem_idx].sons[child_idx] = self.hard_delete_recursive(self.arena[elem_idx].sons[child_idx], next_disc(disc), item, size);
+        let child_idx = if val == C::zero() {
+            // Same tie ambiguity as `find_recursive` (see there for why) -- ask it
+            // which side actually holds the item instead of guessing from this
+            // node's other axes.
+            if self.find_recursive(self.arena[elem_idx].sons[0], next, item, size).is_some() { 0 } else { 1 }
+        } else if val > C::zero() { 1 } else { 0 };
+
+        self.arena[elem_idx].sons[child_idx] = self.hard_delete_recursive(self.arena[elem_idx].sons[child_idx], next, item, size);
         Some(elem_idx)
     }
 
@@ -869,26 +864,36 @@ impl<T: PartialEq + Clone, C: Coord> Tree<T, C> {
             }
         }
 
-        let mut val = size[disc] - node.size[disc];
+        let val = size[disc] - node.size[disc];
+        let next = next_disc(disc);
+
         if val == C::zero() {
-            let mut ndisc = next_disc(disc);
-            while ndisc != disc {
-                val = size[ndisc] - node.size[ndisc];
-                if val != C::zero() {
-                    break;
+            // Same tie ambiguity as `find_recursive` (see there for why); try both
+            // sides, restoring `path` between attempts so it matches whichever side
+            // actually held the item.
+            let depth = path.len();
+            if let Some(lo) = node.sons[0] {
+                path.push(idx);
+                if let Some(found) = self.find_item_with_path(Some(lo), next, item, size, path) {
+                    return Some(found);
                 }
-                ndisc = next_disc(ndisc);
+                path.truncate(depth);
             }
-            if val == C::zero() {
-                val = C::from_i32(1);
+            if let Some(hi) = node.sons[1] {
+                path.push(idx);
+                if let Some(found) = self.find_item_with_path(Some(hi), next, item, size, path) {
+                    return Some(found);
+                }
+                path.truncate(depth);
             }
+            return None;
         }
 
-        let child_idx = if val >= C::zero() { 1 } else { 0 };
+        let child_idx = if val > C::zero() { 1 } else { 0 };
 
         if let Some(child_node_idx) = node.sons[child_idx] {
             path.push(idx);
-            return self.find_item_with_path(Some(child_node_idx), next_disc(disc), item, size, path);
+            return self.find_item_with_path(Some(child_node_idx), next, item, size, path);
         }
 
         None
@@ -1279,23 +1284,25 @@ mod tests {
                     let mut tree = Tree::<usize, $t>::new();
                     let mut boxes = Vec::new();
 
-                    // NOTE: kept at 1000 items / 250 deletions rather than the larger
-                    // sizes used elsewhere in this file. At larger N (observed starting
-                    // around 1500 items with this seed) the promotion-based delete in
-                    // `kd_do_delete` can hit exact coordinate ties at the axis being
-                    // promoted, which the tie-break in `find_recursive` (falling back to
-                    // other axes) resolves using the *promoted* node's unrelated
-                    // coordinates instead of the original deleted node's -- a separate,
-                    // pre-existing edge case unrelated to this test that is not fixed
-                    // here. See the port notes for the 2D crate's `really_delete` for
-                    // details.
-                    for i in 0..1000 {
+                    // Regression coverage for a tie-break bug in the promote-and-cascade
+                    // delete shared by `hard_delete`/`really_delete`: on an exact
+                    // coordinate tie, `find_recursive` used to fall back to comparing
+                    // *this node's* other axes to pick a side -- but delete's promotion
+                    // step (`kd_do_delete`) can swap a different item into a node's
+                    // position later, changing those other-axis values without changing
+                    // which subtree the original item was placed in, silently
+                    // misrouting later searches and making an unrelated, never-deleted
+                    // item unfindable. Fixed by having ties check (read-only) which side
+                    // actually holds the item instead of guessing. Kept at 3000 items /
+                    // 750 interleaved deletions -- the scale that reliably reproduced
+                    // the bug before the fix -- specifically to catch a regression.
+                    for i in 0..3000 {
                         let b = rand_box(&mut rng);
                         boxes.push(b);
                         tree.insert(i, b);
                     }
 
-                    assert_eq!(tree.count(), 1000);
+                    assert_eq!(tree.count(), 3000);
 
                     // Deleting an item that was never inserted must report NotFound and
                     // must not touch the tries/dels counters or the item count.
@@ -1311,9 +1318,9 @@ mod tests {
                     assert_eq!(status, Status::NotFound);
                     assert_eq!(tries, 0);
                     assert_eq!(dels, 0);
-                    assert_eq!(tree.count(), 1000);
+                    assert_eq!(tree.count(), 3000);
 
-                    for i in 0..250 {
+                    for i in 0..750 {
                         let (status, tries, dels) = tree.really_delete(&i, &boxes[i]);
                         assert_eq!(status, Status::Ok);
                         assert!(tries >= 0);
@@ -1321,9 +1328,9 @@ mod tests {
                         assert!(!tree.is_member(&i, &boxes[i]));
                     }
 
-                    assert_eq!(tree.count(), 750);
+                    assert_eq!(tree.count(), 2250);
 
-                    for i in 250..1000 {
+                    for i in 750..3000 {
                         assert!(tree.is_member(&i, &boxes[i]), "item {} should still be present", i);
                     }
                 }
@@ -1423,3 +1430,4 @@ mod tests {
     generate_tests!(i128, tests_i128);
     generate_tests!(f64, tests_f64);
 }
+
