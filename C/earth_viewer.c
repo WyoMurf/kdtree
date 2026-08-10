@@ -19,10 +19,10 @@
  * build_city_metatree) rendered as points on Earth's sphere, with an orbit
  * camera and proximity-gated name labels.
  *
- * Deliberately simpler than viewer.c's LOD system: at ~150 tiles and ~170k
+ * Deliberately simpler than viewer.c's LOD system: at ~390 tiles and ~170k
  * total points (vs. Gaia's ~33,500 shards and 157M stars), there's no need
  * for kd2lod's subtree-bbox-annotation/angular-collapse machinery -- every
- * meta-tree node is visited and tested every frame (a full scan of ~150
+ * meta-tree node is visited and tested every frame (a full scan of ~390
  * entries is trivial), and every point in a visible, loaded tile is drawn
  * directly. If this is ever pointed at a much larger place dataset (e.g.
  * GeoNames' full ~4.8M-place allCountries.zip), that's the point to
@@ -404,7 +404,7 @@ static NameEntry *LookupName(uint64_t geonameid) {
 }
 
 /* --- Per-tile mmap cache, same lazy-load-once-and-keep pattern as
- * viewer.c's Shard/EnsureShardLoaded (no eviction -- at ~150 tiles totaling
+ * viewer.c's Shard/EnsureShardLoaded (no eviction -- at ~390 tiles totaling
  * maybe a few MB, keeping them all mapped for the process lifetime once
  * touched is not a concern the way it was for ~33,500 star shards). --- */
 typedef struct {
@@ -711,7 +711,7 @@ static void DrawTilePoints(const Tile *tile, const Plane fr[6], const HorizonTes
 /* Every meta-tree node holds exactly one tile's own box (there's no
  * subtree-aggregated box without a kd2lod-style annotation, which this
  * viewer deliberately doesn't build -- see the file header comment), so
- * this always visits every node rather than pruning subtrees; at ~150
+ * this always visits every node rather than pruning subtrees; at ~390
  * entries that's trivial. */
 static void WalkMetaTree(int64_t idx, const Plane fr[6], const HorizonTest *ht, Vector3 camPos, float altitudeKm) {
     if (idx < 0) return;
@@ -826,8 +826,20 @@ int main(void) {
     }
 
     /* Start over Cody, Wyoming (44.52634 N, 109.05653 W, per cities1000.txt's
-     * own entry for it) rather than an arbitrary point. */
+     * own entry for it) rather than an arbitrary point. EV_LON/EV_LAT/EV_ALT
+     * override the starting camera position -- see test_earth_viewer_visual.sh,
+     * which uses this (plus EV_SCREENSHOT below) to smoke-test rendering
+     * without a human at the keyboard: there's no interactive test harness
+     * for a GUI app, so this is the automatable substitute. All four are
+     * no-ops when unset, so normal interactive runs are unaffected. */
     OrbitCamera oc = { .lon = -109.05653, .lat = 44.52634, .altitude = INITIAL_ALTITUDE_KM };
+    if (getenv("EV_LON")) oc.lon = atof(getenv("EV_LON"));
+    if (getenv("EV_LAT")) oc.lat = atof(getenv("EV_LAT"));
+    if (getenv("EV_ALT")) oc.altitude = atof(getenv("EV_ALT"));
+    const char *screenshotPath = getenv("EV_SCREENSHOT");
+    int screenshotFrame = getenv("EV_SCREENSHOT_FRAME") ? atoi(getenv("EV_SCREENSHOT_FRAME")) : 30;
+    int frameCount = 0;
+
     Camera3D camera = { 0 };
     camera.fovy = 60.0f;
     camera.projection = CAMERA_PERSPECTIVE;
@@ -837,6 +849,7 @@ int main(void) {
     rlSetClipPlanes(nearClip, farClip);
 
     while (!WindowShouldClose()) {
+        frameCount++;
         float deltaTime = GetFrameTime();
         UpdateOrbitCamera(&oc, &camera, deltaTime);
 
@@ -913,6 +926,17 @@ int main(void) {
         DrawText("Controls: drag with left mouse to orbit, scroll/W-S to zoom", 10, currentHeight - 30, 14, SKYBLUE);
 
         EndDrawing();
+
+        /* Screenshot is taken (and the exact filename) relative to the
+         * process's working directory regardless of what path is given --
+         * TakeScreenshot()/ExportImage() always prepend raylib's own
+         * GetWorkingDirectory(), so EV_SCREENSHOT should just be a bare
+         * filename; test_earth_viewer_visual.sh runs from citydata/ for
+         * exactly this reason. */
+        if (screenshotPath && frameCount == screenshotFrame) {
+            TakeScreenshot(screenshotPath);
+            break;
+        }
     }
 
     if (haveEarthTexture) {
