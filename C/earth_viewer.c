@@ -124,6 +124,26 @@ static Mesh GenEarthSphereMesh(float radiusKm, int rings, int slices) {
         }
     }
 
+    /* Winding: (a,b,c) and (c,b,d), verified by cross((b-a),(c-a)) pointing
+     * the same way as the outward radial direction at every sampled (r,s)
+     * (checked numerically, not just by inspection) -- i.e. counter-
+     * clockwise as seen from outside the sphere, which is what makes this
+     * mesh's outward faces the "front" faces under backface culling.
+     *
+     * An earlier version of this loop used (a,c,b)/(c,d,b) -- the same
+     * three vertices, wound the other way -- which produces INWARD-facing
+     * triangles. With backface culling enabled that discarded the near
+     * (should be visible) hemisphere and left the far (antipodal)
+     * hemisphere to win the depth test instead, but only once a texture
+     * with actual spatial variation was bound: the default 1x1 placeholder
+     * texture rendered as the same flat color regardless of which side was
+     * actually showing, so the wrong side being visible had no visible
+     * symptom until the real Earth texture made it obvious. It also only
+     * showed up at close camera range during testing -- zoomed further out
+     * it happened to still read as correct -- but that turned out to be a
+     * red herring, not a second, altitude-dependent bug: this fix (getting
+     * the winding right) resolved it at every altitude tested, with
+     * backface culling back on. */
     int idx = 0;
     for (int r = 0; r < rings; r++) {
         for (int s = 0; s < slices; s++) {
@@ -131,8 +151,8 @@ static Mesh GenEarthSphereMesh(float radiusKm, int rings, int slices) {
             unsigned short b = (unsigned short)(a + ringVerts);
             unsigned short c = (unsigned short)(a + 1);
             unsigned short d = (unsigned short)(b + 1);
-            mesh.indices[idx++] = a; mesh.indices[idx++] = c; mesh.indices[idx++] = b;
-            mesh.indices[idx++] = c; mesh.indices[idx++] = d; mesh.indices[idx++] = b;
+            mesh.indices[idx++] = a; mesh.indices[idx++] = b; mesh.indices[idx++] = c;
+            mesh.indices[idx++] = c; mesh.indices[idx++] = b; mesh.indices[idx++] = d;
         }
     }
 
@@ -607,16 +627,10 @@ int main(void) {
         ClearBackground((Color){ 5, 5, 15, 255 });
 
         BeginMode3D(camera);
-            /* Backface culling stays off for the Earth mesh draw too: at
-             * close range, culling was (for reasons not fully pinned down --
-             * possibly a Zink/NVK-specific winding/rasterization quirk,
-             * confirmed unrelated to LonLatToCartesian or the mesh's own
-             * vertex data via a minimal standalone repro) discarding the
-             * near-side triangles and letting the antipodal far side win the
-             * depth test instead. Disabling it costs nothing for one modest,
-             * single, opaque mesh and empirically fixes it at every altitude
-             * tested. */
-            rlDisableBackfaceCulling();
+            /* Backface culling stays on for the Earth mesh itself -- see
+             * GenEarthSphereMesh's comment on triangle winding for the bug
+             * this used to paper over by disabling culling entirely. */
+            rlEnableBackfaceCulling();
             if (haveEarthTexture) {
                 DrawModel(earthModel, (Vector3){ 0, 0, 0 }, 1.0f, WHITE);
             } else {
@@ -624,6 +638,10 @@ int main(void) {
                 DrawSphereWires((Vector3){ 0, 0, 0 }, EARTH_RADIUS_KM * 1.001f, 18, 36, (Color){ 255, 255, 255, 40 });
             }
 
+            /* City-dot billboards are camera-facing quads built by hand
+             * (rlVertex3f below), not a wound mesh -- backface culling has
+             * to stay off for them regardless of the Earth mesh's winding. */
+            rlDisableBackfaceCulling();
             rlBegin(RL_QUADS);
             WalkMetaTree(0, frustum, camera.position, oc.altitude);
             rlEnd();
