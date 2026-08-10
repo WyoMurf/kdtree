@@ -48,6 +48,21 @@ double haversine_distance(double lat1, double lon1, double lat2, double lon2, do
 double vincenty_distance(double lat1, double lon1, double lat2, double lon2, double semi_major_axis, double flattening);
 
 /*
+ * Converts an equatorial-style (ra, dec) or geographic (lon, lat) pair, in
+ * degrees, into a HEALPix NESTED-scheme pixel index at the given resolution
+ * `level` (nside = 2^level; 12*nside^2 cells total over the whole sphere --
+ * level 3 is 768 cells, a common "roughly a thousand tiles" choice; valid
+ * levels are 0..29). The two angle arguments are mathematically
+ * interchangeable -- this is the same equatorial-coordinate projection
+ * either way -- so pass right ascension/declination for astronomical data,
+ * or longitude/latitude for terrestrial data. The first angle is
+ * normalized internally, so it may be given in either the conventional
+ * [0, 360) astronomical range or the conventional [-180, 180) geographic
+ * range; callers don't need to pre-normalize longitude before calling.
+ */
+uint64_t healpix_nested_index(double ra_or_lon_deg, double dec_or_lat_deg, int level);
+
+/*
  * Degrees/minutes/seconds <-> decimal degrees conversions, one pair per
  * bit-width flavor (C has no generics). Degrees and minutes are always
  * non-negative magnitudes; the separate `sign` parameter (+1 or -1) carries

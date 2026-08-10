@@ -20,6 +20,7 @@ C/geo_utils_test
 C/earth_viewer
 C/geonames2kd
 C/build_city_metatree
+C/healpix_calc
 # Generated city-viewer data artifacts (built by geonames2kd/build_city_metatree
 # from a GeoNames download -- see README-cities.md)
 citydata/

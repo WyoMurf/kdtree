@@ -127,6 +127,113 @@ func DegreesToDms[T Coord](degrees float64) (sign int, deg, min T, sec float64) 
 	return sign, T(degF), T(minF), sec
 }
 
+// interleaveBits interleaves the bits of two 32-bit integers into a 64-bit
+// Morton (Z-order curve) code -- the standard way to build a HEALPix NESTED
+// pixel index from a face's local (i, j) grid coordinates.
+func interleaveBits(x, y uint32) uint64 {
+	var res uint64
+	for i := uint(0); i < 32; i++ {
+		res |= (uint64(x&(1<<i)) << i) | (uint64(y&(1<<i)) << (i + 1))
+	}
+	return res
+}
+
+// HealpixNestedIndex converts an equatorial-style (ra, dec) or geographic
+// (lon, lat) pair, in degrees, into a HEALPix NESTED-scheme pixel index at
+// the given resolution level (nside = 2^level; 12*nside^2 cells total over
+// the whole sphere -- level 3 is 768 cells, a common "roughly a thousand
+// tiles" choice; valid levels are 0..29). The two angle arguments are
+// mathematically interchangeable -- this is the same equatorial-coordinate
+// projection either way -- so pass right ascension/declination for
+// astronomical data, or longitude/latitude for terrestrial data. raOrLonDeg
+// is normalized internally, so it may be given in either the conventional
+// [0, 360) astronomical range or the conventional [-180, 180) geographic
+// range; callers don't need to pre-normalize longitude before calling.
+func HealpixNestedIndex(raOrLonDeg, decOrLatDeg float64, level int) uint64 {
+	halfPi := math.Pi / 2.0
+
+	lon := math.Mod(raOrLonDeg, 360.0)
+	if lon < 0.0 {
+		lon += 360.0
+	}
+
+	phi := lon * (math.Pi / 180.0)
+	z := math.Sin(decOrLatDeg * (math.Pi / 180.0))
+
+	nside := uint64(1) << uint(level)
+	facePixels := nside * nside
+
+	var xc, yc float64
+	if math.Abs(z) <= 2.0/3.0 {
+		xc = phi
+		yc = 1.5 * z
+	} else {
+		// Polar caps.
+		sgn := 1.0
+		if z < 0.0 {
+			sgn = -1.0
+		}
+		sigma := math.Sqrt(3.0 * (1.0 - math.Abs(z)))
+		yc = sgn * (2.0 - sigma)
+
+		// Find which of the 4 polar facets we are in.
+		facet := int(phi / halfPi)
+		if facet < 0 {
+			facet = 0
+		}
+		if facet > 3 {
+			facet = 3
+		}
+		phiC := (float64(facet) + 0.5) * halfPi
+		xc = phiC + (phi-phiC)*sigma
+	}
+
+	// Project to oblique grid coordinates (scaled by pi/2).
+	pa := xc / halfPi
+	pb := yc / halfPi
+
+	u := pa + pb/2.0
+	v := pa - pb/2.0
+
+	ku := math.Floor(u)
+	kv := math.Floor(v)
+	uFrac := u - ku
+	vFrac := v - kv
+
+	// Translate (ku, kv) oblique grid coordinate to base face ID (0..11).
+	kuI := int(ku)
+	kvI := int(kv)
+
+	var face uint64
+	if kuI >= 0 && kvI >= 0 {
+		if kuI < 4 && kvI < 4 {
+			face = uint64((4-kvI+kuI%4)%4 + 4) // Equatorial
+		} else {
+			face = uint64(kuI % 4) // North cap
+		}
+	} else if kuI < 0 && kvI < 0 {
+		kuMod := kuI % 4
+		if kuMod < 0 {
+			kuMod += 4
+		}
+		face = uint64(8 + kuMod) // South cap
+	}
+
+	// Grid coordinates inside the face.
+	i := uint32(uFrac * float64(nside))
+	j := uint32(vFrac * float64(nside))
+	if uint64(i) >= nside {
+		i = uint32(nside - 1)
+	}
+	if uint64(j) >= nside {
+		j = uint32(nside - 1)
+	}
+
+	// Interleave bits for NESTED scheme.
+	morton := interleaveBits(i, j)
+	return face*facePixels + morton
+}
+
 // Box defines a 2D bounding box [left, bottom, right, top]
 type Box[T Coord] [4]T
 

@@ -42,6 +42,7 @@ Every language also ships a small set of general-purpose utilities that have not
 * **`haversine_distance`** — fast, approximate great-circle distance between two lat/lon points (in degrees) on a perfect sphere of a given radius.
 * **`vincenty_distance`** — slower, iterative, but exact distance on an oblate spheroid (e.g. Earth's WGS-84 ellipsoid), given its semi-major axis and flattening. Earth's WGS-84 constants (`EARTH_RADIUS_KM`, `EARTH_SEMI_MAJOR_AXIS_M`, `EARTH_FLATTENING`) are provided in every language so you don't have to look them up.
 * **`dms_to_degrees` / `degrees_to_dms`** — convert between degrees/minutes/seconds and decimal degrees (`f64`). Degrees and minutes are typed using the same per-language coordinate type as the rest of the library (purely for API-family consistency — the math itself doesn't need it); seconds is always `f64`. Sign is carried separately from the degree/minute magnitudes so angles between −1° and 0° (e.g. a declination of −0° 15′) are representable.
+* **`healpix_nested_index`** — converts an equatorial (RA, Dec) or geographic (lon, lat) pair, in degrees, into a HEALPix NESTED-scheme pixel index at a given resolution level (`nside = 2^level`, `12·nside²` cells total — level 3 is 768 cells). The two angle names are interchangeable (same underlying projection either way); the first angle is normalized internally, so longitude can be passed in either the `[0, 360)` or `[-180, 180)` convention without pre-normalizing.
 
 ## Precision & Bit-Widths
 

@@ -205,4 +205,18 @@ end
         d = vincenty_distance(0.0, 0.0, 0.001, 179.999, EARTH_SEMI_MAJOR_AXIS_M, EARTH_FLATTENING)
         @test isfinite(d)
     end
+
+    # Expected values cross-checked against C/healpix_calc.c (via the shared
+    # geo_utils.c implementation it now wraps), which this port mirrors exactly.
+    @testset "HEALPix nested index matches C reference" begin
+        @test healpix_nested_index(217.4290, -62.6795, 12) == 134053741  # polar cap
+        @test healpix_nested_index(-109.05653, 44.52634, 3) == 330       # polar cap, negative lon
+        @test healpix_nested_index(45.0, 10.0, 3) == 282                 # equatorial belt
+        @test healpix_nested_index(0.0, 0.0, 3) == 256                   # equatorial belt, origin
+        @test healpix_nested_index(200.0, -20.0, 5) == 4257              # equatorial belt, higher level
+    end
+
+    @testset "HEALPix nested index longitude normalization" begin
+        @test healpix_nested_index(-109.05653, 44.52634, 3) == healpix_nested_index(250.94347, 44.52634, 3)
+    end
 end

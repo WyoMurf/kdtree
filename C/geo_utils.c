@@ -97,6 +97,91 @@ double vincenty_distance(double lat1, double lon1, double lat2, double lon2, dou
     return b * A * (sigma - deltaSigma);
 }
 
+/*
+ * Interleaves the bits of two 32-bit integers into a 64-bit Morton (Z-order
+ * curve) code -- the standard way to build a HEALPix NESTED pixel index out
+ * of a face's local (i, j) grid coordinates.
+ */
+static uint64_t interleave_bits(uint32_t x, uint32_t y) {
+    uint64_t res = 0;
+    for (int i = 0; i < 32; i++) {
+        res |= (((uint64_t)(x & (1U << i))) << i) | (((uint64_t)(y & (1U << i))) << (i + 1));
+    }
+    return res;
+}
+
+uint64_t healpix_nested_index(double ra_or_lon_deg, double dec_or_lat_deg, int level) {
+    /* Normalize to [0, 360) so callers can pass geographic longitude
+     * ([-180, 180)) directly, same as right ascension ([0, 360), already a
+     * no-op here). */
+    double lon = fmod(ra_or_lon_deg, 360.0);
+    if (lon < 0.0) lon += 360.0;
+
+    double phi = lon * TO_RAD;
+    double z = sin(dec_or_lat_deg * TO_RAD);
+
+    uint64_t nside = 1ULL << level;
+    uint64_t face_pixels = nside * nside;
+
+    double xc, yc;
+    if (fabs(z) <= 2.0 / 3.0) {
+        xc = phi;
+        yc = 1.5 * z;
+    } else {
+        /* Polar caps. */
+        double sgn = (z >= 0.0) ? 1.0 : -1.0;
+        double sigma = sqrt(3.0 * (1.0 - fabs(z)));
+        yc = sgn * (2.0 - sigma);
+
+        /* Find which of the 4 polar facets we are in. */
+        int facet = (int)(phi / (M_PI / 2.0));
+        if (facet < 0) facet = 0;
+        if (facet > 3) facet = 3;
+        double phi_c = (facet + 0.5) * (M_PI / 2.0);
+        xc = phi_c + (phi - phi_c) * sigma;
+    }
+
+    /* Project to oblique grid coordinates (scaled by pi/2). */
+    double pa = xc / (M_PI / 2.0);
+    double pb = yc / (M_PI / 2.0);
+
+    double u = pa + pb / 2.0;
+    double v = pa - pb / 2.0;
+
+    double ku = floor(u);
+    double kv = floor(v);
+    double u_frac = u - ku;
+    double v_frac = v - kv;
+
+    /* Translate (ku, kv) oblique grid coordinate to base face ID (0..11). */
+    int face = 0;
+    int ku_i = (int)ku;
+    int kv_i = (int)kv;
+
+    if (ku_i >= 0 && kv_i >= 0) {
+        if (ku_i < 4 && kv_i < 4) {
+            face = (4 - kv_i + ku_i % 4) % 4 + 4; /* Equatorial */
+        } else {
+            face = ku_i % 4; /* North cap */
+        }
+    } else if (ku_i < 0 && kv_i < 0) {
+        int ku_mod = ku_i % 4;
+        if (ku_mod < 0) ku_mod += 4;
+        face = 8 + ku_mod; /* South cap */
+    }
+
+    /* Grid coordinates inside the face. */
+    uint32_t i = (uint32_t)(u_frac * nside);
+    uint32_t j = (uint32_t)(v_frac * nside);
+    if (i >= nside) i = nside - 1;
+    if (j >= nside) j = nside - 1;
+
+    /* Interleave bits for NESTED scheme. */
+    uint64_t morton = interleave_bits(i, j);
+
+    return face * face_pixels + morton;
+}
+
 double dms32_to_degrees(int sign, int32_t deg, int32_t min, double sec) {
     return sign * ((double)deg + (double)min / 60.0 + sec / 3600.0);
 }

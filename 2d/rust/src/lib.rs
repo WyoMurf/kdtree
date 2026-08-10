@@ -217,6 +217,111 @@ pub fn degrees_to_dms<C: Coord>(degrees: f64) -> (i32, C, C, f64) {
     (sign, C::from_i32(deg_f as i32), C::from_i32(min_f as i32), sec)
 }
 
+/// Interleaves the bits of two 32-bit integers into a 64-bit Morton (Z-order curve) code -- the
+/// standard way to build a HEALPix NESTED pixel index from a face's local (i, j) grid
+/// coordinates.
+fn interleave_bits(x: u32, y: u32) -> u64 {
+    let mut res: u64 = 0;
+    for i in 0..32 {
+        res |= (((x & (1u32 << i)) as u64) << i) | (((y & (1u32 << i)) as u64) << (i + 1));
+    }
+    res
+}
+
+/// Converts an equatorial-style (ra, dec) or geographic (lon, lat) pair, in degrees, into a
+/// HEALPix NESTED-scheme pixel index at the given resolution `level` (nside = 2^level;
+/// 12*nside^2 cells total over the whole sphere -- level 3 is 768 cells, a common "roughly a
+/// thousand tiles" choice; valid levels are 0..29). The two angle arguments are mathematically
+/// interchangeable -- this is the same equatorial-coordinate projection either way -- so pass
+/// right ascension/declination for astronomical data, or longitude/latitude for terrestrial
+/// data. `ra_or_lon_deg` is normalized internally, so it may be given in either the conventional
+/// `[0, 360)` astronomical range or the conventional `[-180, 180)` geographic range; callers
+/// don't need to pre-normalize longitude before calling.
+pub fn healpix_nested_index(ra_or_lon_deg: f64, dec_or_lat_deg: f64, level: u32) -> u64 {
+    let to_rad = std::f64::consts::PI / 180.0;
+    let half_pi = std::f64::consts::PI / 2.0;
+
+    let mut lon = ra_or_lon_deg % 360.0;
+    if lon < 0.0 {
+        lon += 360.0;
+    }
+
+    let phi = lon * to_rad;
+    let z = (dec_or_lat_deg * to_rad).sin();
+
+    let nside: u64 = 1u64 << level;
+    let face_pixels = nside * nside;
+
+    let xc: f64;
+    let yc: f64;
+    if z.abs() <= 2.0 / 3.0 {
+        xc = phi;
+        yc = 1.5 * z;
+    } else {
+        // Polar caps.
+        let sgn = if z >= 0.0 { 1.0 } else { -1.0 };
+        let sigma = (3.0 * (1.0 - z.abs())).sqrt();
+        yc = sgn * (2.0 - sigma);
+
+        // Find which of the 4 polar facets we are in.
+        let mut facet = (phi / half_pi) as i32;
+        if facet < 0 {
+            facet = 0;
+        }
+        if facet > 3 {
+            facet = 3;
+        }
+        let phi_c = (facet as f64 + 0.5) * half_pi;
+        xc = phi_c + (phi - phi_c) * sigma;
+    }
+
+    // Project to oblique grid coordinates (scaled by pi/2).
+    let pa = xc / half_pi;
+    let pb = yc / half_pi;
+
+    let u = pa + pb / 2.0;
+    let v = pa - pb / 2.0;
+
+    let ku = u.floor();
+    let kv = v.floor();
+    let u_frac = u - ku;
+    let v_frac = v - kv;
+
+    // Translate (ku, kv) oblique grid coordinate to base face ID (0..11).
+    let ku_i = ku as i32;
+    let kv_i = kv as i32;
+
+    let face: u64 = if ku_i >= 0 && kv_i >= 0 {
+        if ku_i < 4 && kv_i < 4 {
+            ((4 - kv_i + ku_i % 4) % 4 + 4) as u64 // Equatorial
+        } else {
+            (ku_i % 4) as u64 // North cap
+        }
+    } else if ku_i < 0 && kv_i < 0 {
+        let mut ku_mod = ku_i % 4;
+        if ku_mod < 0 {
+            ku_mod += 4;
+        }
+        (8 + ku_mod) as u64 // South cap
+    } else {
+        0
+    };
+
+    // Grid coordinates inside the face.
+    let mut i = (u_frac * nside as f64) as u32;
+    let mut j = (v_frac * nside as f64) as u32;
+    if i as u64 >= nside {
+        i = (nside - 1) as u32;
+    }
+    if j as u64 >= nside {
+        j = (nside - 1) as u32;
+    }
+
+    // Interleave bits for NESTED scheme.
+    let morton = interleave_bits(i, j);
+    face * face_pixels + morton
+}
+
 pub type KdBox<C = i32> = [C; 4];
 
 pub const LEFT: usize = 0;
@@ -1561,5 +1666,25 @@ mod geo_math_tests {
     fn test_vincenty_near_antipodal_is_finite() {
         let dist = vincenty_distance(0.0, 0.0, 0.001, 179.999, EARTH_SEMI_MAJOR_AXIS_M, EARTH_FLATTENING);
         assert!(dist.is_finite());
+    }
+
+    // Expected values cross-checked against C/healpix_calc.c (via the shared geo_utils.c
+    // implementation it now wraps), which this port mirrors exactly.
+    #[test]
+    fn test_healpix_nested_index_matches_c_reference() {
+        assert_eq!(healpix_nested_index(217.4290, -62.6795, 12), 134053741); // polar cap
+        assert_eq!(healpix_nested_index(-109.05653, 44.52634, 3), 330); // polar cap, negative lon
+        assert_eq!(healpix_nested_index(45.0, 10.0, 3), 282); // equatorial belt
+        assert_eq!(healpix_nested_index(0.0, 0.0, 3), 256); // equatorial belt, origin
+        assert_eq!(healpix_nested_index(200.0, -20.0, 5), 4257); // equatorial belt, higher level
+    }
+
+    #[test]
+    fn test_healpix_nested_index_longitude_normalization() {
+        // -109.05653 and its +360 equivalent must land in the same cell.
+        assert_eq!(
+            healpix_nested_index(-109.05653, 44.52634, 3),
+            healpix_nested_index(250.94347, 44.52634, 3)
+        );
     }
 }

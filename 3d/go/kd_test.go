@@ -467,3 +467,34 @@ func TestVincentyDistanceNearAntipodal(t *testing.T) {
 		t.Errorf("expected a finite value, got %v", got)
 	}
 }
+
+// Expected values cross-checked against C/healpix_calc.c (via the shared
+// geo_utils.c implementation it now wraps), which this port mirrors exactly.
+func TestHealpixNestedIndexMatchesCReference(t *testing.T) {
+	cases := []struct {
+		raOrLon, decOrLat float64
+		level             int
+		want              uint64
+		note              string
+	}{
+		{217.4290, -62.6795, 12, 134053741, "polar cap"},
+		{-109.05653, 44.52634, 3, 330, "polar cap, negative lon"},
+		{45.0, 10.0, 3, 282, "equatorial belt"},
+		{0.0, 0.0, 3, 256, "equatorial belt, origin"},
+		{200.0, -20.0, 5, 4257, "equatorial belt, higher level"},
+	}
+	for _, c := range cases {
+		got := HealpixNestedIndex(c.raOrLon, c.decOrLat, c.level)
+		if got != c.want {
+			t.Errorf("%s: HealpixNestedIndex(%v, %v, %d) = %d, want %d", c.note, c.raOrLon, c.decOrLat, c.level, got, c.want)
+		}
+	}
+}
+
+func TestHealpixNestedIndexLongitudeNormalization(t *testing.T) {
+	got1 := HealpixNestedIndex(-109.05653, 44.52634, 3)
+	got2 := HealpixNestedIndex(250.94347, 44.52634, 3)
+	if got1 != got2 {
+		t.Errorf("expected -109.05653 and its +360 equivalent to land in the same cell, got %d and %d", got1, got2)
+	}
+}

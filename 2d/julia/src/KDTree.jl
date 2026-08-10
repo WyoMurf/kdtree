@@ -1,7 +1,8 @@
 module KDTree
 
 export serialize, get_bounds, get_serialized_bounds, get_mmap_bounds, MmapNode, Tree, Box, insert!, count_items, is_member, hard_delete!, really_delete!, badness, nearest, Priority, search, LEFT, BOTTOM, RIGHT, TOP,
-       haversine_distance, vincenty_distance, dms_to_degrees, degrees_to_dms, EARTH_RADIUS_KM, EARTH_SEMI_MAJOR_AXIS_M, EARTH_FLATTENING
+       haversine_distance, vincenty_distance, dms_to_degrees, degrees_to_dms, EARTH_RADIUS_KM, EARTH_SEMI_MAJOR_AXIS_M, EARTH_FLATTENING,
+       healpix_nested_index
 
 const Box{C<:Real} = NTuple{4, C}
 const LEFT = 1
@@ -167,6 +168,106 @@ function degrees_to_dms(::Type{C}, degrees::Float64) where {C<:Real}
     min_f = floor(rem_min)
     sec = (rem_min - min_f) * 60.0
     return sign, C(deg_f), C(min_f), sec
+end
+
+"""
+    interleave_bits(x, y)
+
+Interleaves the bits of two 32-bit integers into a 64-bit Morton (Z-order
+curve) code -- the standard way to build a HEALPix NESTED pixel index from a
+face's local (i, j) grid coordinates.
+"""
+function interleave_bits(x::UInt32, y::UInt32)::UInt64
+    res = UInt64(0)
+    for i in 0:31
+        res |= (UInt64(x & (UInt32(1) << i)) << i) | (UInt64(y & (UInt32(1) << i)) << (i + 1))
+    end
+    return res
+end
+
+"""
+    healpix_nested_index(ra_or_lon_deg, dec_or_lat_deg, level)
+
+Converts an equatorial-style (ra, dec) or geographic (lon, lat) pair, in
+degrees, into a HEALPix NESTED-scheme pixel index at the given resolution
+`level` (nside = 2^level; 12*nside^2 cells total over the whole sphere --
+level 3 is 768 cells, a common "roughly a thousand tiles" choice; valid
+levels are 0..29). The two angle arguments are mathematically
+interchangeable -- this is the same equatorial-coordinate projection either
+way -- so pass right ascension/declination for astronomical data, or
+longitude/latitude for terrestrial data. `ra_or_lon_deg` is normalized
+internally, so it may be given in either the conventional [0, 360)
+astronomical range or the conventional [-180, 180) geographic range;
+callers don't need to pre-normalize longitude before calling.
+"""
+function healpix_nested_index(ra_or_lon_deg::Float64, dec_or_lat_deg::Float64, level::Int)::UInt64
+    half_pi = pi / 2.0
+
+    lon = mod(ra_or_lon_deg, 360.0)
+
+    phi = lon * (pi / 180.0)
+    z = sin(dec_or_lat_deg * (pi / 180.0))
+
+    nside = UInt64(1) << level
+    face_pixels = nside * nside
+
+    local xc, yc
+    if abs(z) <= 2.0 / 3.0
+        xc = phi
+        yc = 1.5 * z
+    else
+        # Polar caps.
+        sgn = z >= 0.0 ? 1.0 : -1.0
+        sigma = sqrt(3.0 * (1.0 - abs(z)))
+        yc = sgn * (2.0 - sigma)
+
+        # Find which of the 4 polar facets we are in.
+        facet = floor(Int, phi / half_pi)
+        facet = clamp(facet, 0, 3)
+        phi_c = (facet + 0.5) * half_pi
+        xc = phi_c + (phi - phi_c) * sigma
+    end
+
+    # Project to oblique grid coordinates (scaled by pi/2).
+    pa = xc / half_pi
+    pb = yc / half_pi
+
+    u = pa + pb / 2.0
+    v = pa - pb / 2.0
+
+    ku = floor(u)
+    kv = floor(v)
+    u_frac = u - ku
+    v_frac = v - kv
+
+    # Translate (ku, kv) oblique grid coordinate to base face ID (0..11).
+    ku_i = Int(ku)
+    kv_i = Int(kv)
+
+    face = UInt64(0)
+    if ku_i >= 0 && kv_i >= 0
+        if ku_i < 4 && kv_i < 4
+            face = UInt64(mod(4 - kv_i + mod(ku_i, 4), 4) + 4) # Equatorial
+        else
+            face = UInt64(mod(ku_i, 4)) # North cap
+        end
+    elseif ku_i < 0 && kv_i < 0
+        face = UInt64(8 + mod(ku_i, 4)) # South cap
+    end
+
+    # Grid coordinates inside the face.
+    i = UInt32(floor(u_frac * nside))
+    j = UInt32(floor(v_frac * nside))
+    if i >= nside
+        i = UInt32(nside - 1)
+    end
+    if j >= nside
+        j = UInt32(nside - 1)
+    end
+
+    # Interleave bits for NESTED scheme.
+    morton = interleave_bits(i, j)
+    return face * face_pixels + morton
 end
 
 next_disc(disc::Int) = (disc % 4) + 1
