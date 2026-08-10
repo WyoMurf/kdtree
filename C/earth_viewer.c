@@ -530,6 +530,13 @@ int main(void) {
     if (access(EARTH_TEXTURE_PATH, R_OK) == 0) {
         earthTexture = LoadTexture(EARTH_TEXTURE_PATH);
         if (earthTexture.id != 0) {
+            /* LoadTexture defaults to GL_NEAREST with no mipmaps -- fine for
+             * the old flat-color sphere, but it made the real texture look
+             * blocky up close and would alias/shimmer at mid-range zoom.
+             * Mipmaps + trilinear filtering fix both. */
+            GenTextureMipmaps(&earthTexture);
+            SetTextureFilter(earthTexture, TEXTURE_FILTER_TRILINEAR);
+
             Mesh earthMesh = GenEarthSphereMesh(EARTH_RADIUS_KM, EARTH_SPHERE_RINGS, EARTH_SPHERE_SLICES);
             earthModel = LoadModelFromMesh(earthMesh);
             earthModel.materials[0].maps[MATERIAL_MAP_ALBEDO].texture = earthTexture;
