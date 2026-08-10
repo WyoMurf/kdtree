@@ -38,16 +38,15 @@
  * see README-cities.md for where to download it. Not required: if it's
  * absent, main() falls back to the original plain colored sphere. */
 #define EARTH_TEXTURE_PATH "earth_daymap.jpg"
-#define EARTH_SPHERE_RINGS 180
-#define EARTH_SPHERE_SLICES 360
+#define EARTH_SPHERE_RINGS 360
+#define EARTH_SPHERE_SLICES 720
 
 /* raylib's Mesh.indices is `unsigned short *` (see raylib.h) -- a hard
- * 16-bit limit on vertex count baked into the library itself, not something
- * GenEarthSphereMesh can widen. Catch it at compile time instead of letting
- * a future bump of RINGS/SLICES silently wrap the index buffer and corrupt
- * the mesh with no warning. */
-_Static_assert((EARTH_SPHERE_RINGS + 1) * (EARTH_SPHERE_SLICES + 1) <= 65536,
-    "EARTH_SPHERE_RINGS/SLICES produce too many vertices for raylib's 16-bit Mesh.indices");
+ * 16-bit limit on vertex count PER MESH, baked into the library itself.
+ * EARTH_SPHERE_RINGS/SLICES above exceed that in one mesh (361*721 =
+ * 260,281 vertices), so BuildEarthMeshes below splits the sphere into
+ * several latitude bands, each its own Mesh under the limit, all sharing
+ * one Material at draw time -- see its comment for the split math. */
 
 static double DegToRad(double d) { return d * (M_PI / 180.0); }
 
@@ -70,30 +69,33 @@ static Vector3 LonLatToCartesian(double lonDeg, double latDeg, float radiusKm) {
     };
 }
 
-/* Builds a UV-sphere textured with an equirectangular Earth image, using the
- * SAME LonLatToCartesian() that places every city dot -- so the texture and
- * the dots are guaranteed to agree on where a given (lonDeg, latDeg) lands,
- * the same way the camera and the dots were made to agree when the
- * east-west mirroring bug was fixed. UV coordinates are derived from the
- * raw (lonDeg, latDeg) fed into that function, not from the Cartesian
- * result, so the vertex-position negation-of-longitude trick inside
- * LonLatToCartesian has no effect on texture alignment. Standard
+/* Builds one latitude band (rows rowStart..rowEnd inclusive, out of the
+ * overall 0..rings) of a UV-sphere textured with an equirectangular Earth
+ * image, using the SAME LonLatToCartesian() that places every city dot --
+ * so the texture and the dots are guaranteed to agree on where a given
+ * (lonDeg, latDeg) lands, the same way the camera and the dots were made to
+ * agree when the east-west mirroring bug was fixed. UV coordinates are
+ * derived from the raw (lonDeg, latDeg) fed into that function, not from
+ * the Cartesian result, so the vertex-position negation-of-longitude trick
+ * inside LonLatToCartesian has no effect on texture alignment. Standard
  * equirectangular layout: u=0 at lon=-180 (west edge), u=1 at lon=+180,
  * increasing eastward; v=0 at the north pole (lat=+90), v=1 at the south
- * pole (lat=-90). */
-static Mesh GenEarthSphereMesh(float radiusKm, int rings, int slices) {
+ * pole (lat=-90) -- v is still computed from the band-local row r (not the
+ * band's own 0-based offset) so texture coordinates stay correct across
+ * band boundaries. */
+static Mesh GenEarthSphereMeshBand(float radiusKm, int rings, int slices, int rowStart, int rowEnd) {
+    int bandRows = rowEnd - rowStart;
     int ringVerts = slices + 1;
-    int vertexCount = (rings + 1) * ringVerts;
-    int triangleCount = rings * slices * 2;
+    int vertexCount = (bandRows + 1) * ringVerts;
+    int triangleCount = bandRows * slices * 2;
 
-    /* Runtime backstop for the same 16-bit Mesh.indices limit the
-     * _Static_assert on EARTH_SPHERE_RINGS/SLICES checks at compile time --
-     * this function takes rings/slices as plain parameters, so nothing
-     * stops a future caller from passing something the static assert never
-     * sees. */
+    /* Runtime backstop: BuildEarthMeshes below is responsible for keeping
+     * every band under raylib's 16-bit Mesh.indices limit, but this
+     * function takes rowStart/rowEnd as plain parameters, so nothing stops
+     * a future caller from passing a range that violates it. */
     if (vertexCount > 65536) {
-        fprintf(stderr, "GenEarthSphereMesh: %d rings x %d slices = %d vertices, "
-            "exceeds raylib's 16-bit Mesh.indices limit (65536)\n", rings, slices, vertexCount);
+        fprintf(stderr, "GenEarthSphereMeshBand: rows %d..%d x %d slices = %d vertices, "
+            "exceeds raylib's 16-bit Mesh.indices limit (65536)\n", rowStart, rowEnd, slices, vertexCount);
         exit(1);
     }
 
@@ -106,7 +108,7 @@ static Mesh GenEarthSphereMesh(float radiusKm, int rings, int slices) {
     mesh.indices = RL_MALLOC(sizeof(unsigned short) * 3 * (size_t)triangleCount);
 
     int v = 0;
-    for (int r = 0; r <= rings; r++) {
+    for (int r = rowStart; r <= rowEnd; r++) {
         double latDeg = 90.0 - (180.0 * r / rings);
         for (int s = 0; s <= slices; s++) {
             double lonDeg = -180.0 + (360.0 * s / slices);
@@ -133,9 +135,9 @@ static Mesh GenEarthSphereMesh(float radiusKm, int rings, int slices) {
      * An earlier version of this loop used (a,c,b)/(c,d,b) -- the same
      * three vertices, wound the other way -- which produces INWARD-facing
      * triangles. With backface culling enabled that discarded the near
-     * (should be visible) hemisphere and left the far (antipodal)
-     * hemisphere to win the depth test instead, but only once a texture
-     * with actual spatial variation was bound: the default 1x1 placeholder
+     * (should be visible) hemisphere and let the far (antipodal)
+     * hemisphere win the depth test instead, but only once a texture with
+     * actual spatial variation was bound: the default 1x1 placeholder
      * texture rendered as the same flat color regardless of which side was
      * actually showing, so the wrong side being visible had no visible
      * symptom until the real Earth texture made it obvious. It also only
@@ -145,7 +147,7 @@ static Mesh GenEarthSphereMesh(float radiusKm, int rings, int slices) {
      * the winding right) resolved it at every altitude tested, with
      * backface culling back on. */
     int idx = 0;
-    for (int r = 0; r < rings; r++) {
+    for (int r = 0; r < bandRows; r++) {
         for (int s = 0; s < slices; s++) {
             unsigned short a = (unsigned short)(r * ringVerts + s);
             unsigned short b = (unsigned short)(a + ringVerts);
@@ -158,6 +160,30 @@ static Mesh GenEarthSphereMesh(float radiusKm, int rings, int slices) {
 
     UploadMesh(&mesh, false);
     return mesh;
+}
+
+/* Splits a rings x slices UV-sphere into however many latitude bands are
+ * needed to keep every individual Mesh under raylib's 16-bit Mesh.indices
+ * limit (see GenEarthSphereMeshBand), and returns them as a plain array --
+ * not a raylib Model, since a Model's multi-mesh support still requires one
+ * Mesh per struct, and DrawMesh() (used in main()'s render loop) works
+ * directly on that array with a single shared Material, which is simpler
+ * than building a Model's meshes/meshMaterial arrays by hand for no benefit
+ * here (this Earth mesh has no animation, LOD, or per-mesh material need). */
+static Mesh *BuildEarthMeshes(float radiusKm, int rings, int slices, int *outCount) {
+    int maxBandRows = (65536 / (slices + 1)) - 1;
+    int bandCount = (rings + maxBandRows - 1) / maxBandRows; /* ceil(rings/maxBandRows) */
+    int bandRows = (rings + bandCount - 1) / bandCount;      /* ceil(rings/bandCount), redistributed evenly */
+
+    Mesh *meshes = malloc((size_t)bandCount * sizeof(Mesh));
+    int count = 0;
+    for (int rowStart = 0; rowStart < rings; rowStart += bandRows) {
+        int rowEnd = rowStart + bandRows;
+        if (rowEnd > rings) rowEnd = rings;
+        meshes[count++] = GenEarthSphereMeshBand(radiusKm, rings, slices, rowStart, rowEnd);
+    }
+    *outCount = count;
+    return meshes;
 }
 
 /* Standard sphere-horizon test: for a camera outside a sphere of radius R
@@ -328,7 +354,15 @@ static char **LoadManifest(const char *path, size_t *out_count) {
         if (len > 0 && buf[len - 1] == '\n') buf[len - 1] = '\0';
         if (count == cap) {
             cap = cap ? cap * 2 : 256;
-            lines = realloc(lines, cap * sizeof(char *));
+            char **new_lines = realloc(lines, cap * sizeof(char *));
+            if (!new_lines) {
+                fprintf(stderr, "LoadManifest: out of memory reading %s\n", path);
+                for (size_t i = 0; i < count; i++) free(lines[i]);
+                free(lines);
+                fclose(f);
+                return NULL;
+            }
+            lines = new_lines;
         }
         lines[count++] = strdup(buf);
     }
@@ -347,6 +381,18 @@ static int LoadMetaTree(const char *dir) {
     struct stat sb;
     if (fstat(fd, &sb) == -1 || sb.st_size == 0) { close(fd); return 0; }
     g_meta_node_count = sb.st_size / sizeof(kd_2d_f64_mmap_node);
+    /* A file truncated to fewer bytes than one node (e.g. a build_city_metatree
+     * run interrupted mid-write) rounds g_meta_node_count down to 0 via
+     * integer division -- guard against that here the same way
+     * EnsureTileLoaded already does for tile files below, since
+     * g_meta_node_count - 1 on the next line would otherwise wrap (size_t)
+     * to SIZE_MAX and read wildly out of bounds. */
+    if (g_meta_node_count == 0) {
+        printf("Error: %s is too short to contain even one node (%lld bytes) -- likely truncated by an interrupted build_city_metatree run.\n",
+               metatree_path, (long long)sb.st_size);
+        close(fd);
+        return 0;
+    }
     g_meta_nodes = mmap(NULL, sb.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
     close(fd);
     if (g_meta_nodes == MAP_FAILED) { g_meta_nodes = NULL; return 0; }
@@ -564,10 +610,11 @@ int main(void) {
      * InitWindow. Textured Earth is optional -- fall back to the plain
      * sphere below if the file isn't there or fails to load. */
     bool haveEarthTexture = false;
-    Texture2D earthTexture = { 0 };
-    Model earthModel = { 0 };
+    Mesh *earthMeshes = NULL;
+    int earthMeshCount = 0;
+    Material earthMaterial = { 0 };
     if (access(EARTH_TEXTURE_PATH, R_OK) == 0) {
-        earthTexture = LoadTexture(EARTH_TEXTURE_PATH);
+        Texture2D earthTexture = LoadTexture(EARTH_TEXTURE_PATH);
         if (earthTexture.id != 0) {
             /* LoadTexture defaults to GL_NEAREST with no mipmaps -- fine for
              * the old flat-color sphere, but it made the real texture look
@@ -576,11 +623,11 @@ int main(void) {
             GenTextureMipmaps(&earthTexture);
             SetTextureFilter(earthTexture, TEXTURE_FILTER_TRILINEAR);
 
-            Mesh earthMesh = GenEarthSphereMesh(EARTH_RADIUS_KM, EARTH_SPHERE_RINGS, EARTH_SPHERE_SLICES);
-            earthModel = LoadModelFromMesh(earthMesh);
-            earthModel.materials[0].maps[MATERIAL_MAP_ALBEDO].texture = earthTexture;
+            earthMeshes = BuildEarthMeshes(EARTH_RADIUS_KM, EARTH_SPHERE_RINGS, EARTH_SPHERE_SLICES, &earthMeshCount);
+            earthMaterial = LoadMaterialDefault();
+            earthMaterial.maps[MATERIAL_MAP_ALBEDO].texture = earthTexture;
             haveEarthTexture = true;
-            printf("Loaded Earth texture: %s\n", EARTH_TEXTURE_PATH);
+            printf("Loaded Earth texture: %s (%d mesh band%s)\n", EARTH_TEXTURE_PATH, earthMeshCount, earthMeshCount == 1 ? "" : "s");
         } else {
             printf("Warning: found %s but couldn't load it as a texture; using a plain sphere.\n", EARTH_TEXTURE_PATH);
             printf("  (if it's a .jpg: raylib's JPEG loader may be disabled -- SUPPORT_FILEFORMAT_JPG\n");
@@ -628,11 +675,13 @@ int main(void) {
 
         BeginMode3D(camera);
             /* Backface culling stays on for the Earth mesh itself -- see
-             * GenEarthSphereMesh's comment on triangle winding for the bug
-             * this used to paper over by disabling culling entirely. */
+             * GenEarthSphereMeshBand's comment on triangle winding for the
+             * bug this used to paper over by disabling culling entirely. */
             rlEnableBackfaceCulling();
             if (haveEarthTexture) {
-                DrawModel(earthModel, (Vector3){ 0, 0, 0 }, 1.0f, WHITE);
+                for (int i = 0; i < earthMeshCount; i++) {
+                    DrawMesh(earthMeshes[i], earthMaterial, MatrixIdentity());
+                }
             } else {
                 DrawSphere((Vector3){ 0, 0, 0 }, EARTH_RADIUS_KM, (Color){ 25, 60, 95, 255 });
                 DrawSphereWires((Vector3){ 0, 0, 0 }, EARTH_RADIUS_KM * 1.001f, 18, 36, (Color){ 255, 255, 255, 40 });
@@ -669,8 +718,9 @@ int main(void) {
     }
 
     if (haveEarthTexture) {
-        UnloadModel(earthModel);
-        UnloadTexture(earthTexture);
+        for (int i = 0; i < earthMeshCount; i++) UnloadMesh(earthMeshes[i]);
+        free(earthMeshes);
+        UnloadMaterial(earthMaterial); /* also unloads earthMaterial's texture */
     }
     CloseWindow();
 
