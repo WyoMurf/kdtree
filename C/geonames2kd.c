@@ -173,6 +173,10 @@ static int cmp_sort_entry(const void *a, const void *b) {
 static void dedupe_axis(CityPoint *points, int count, int use_lon) {
     if (count < 2) return;
     SortEntry *entries = malloc((size_t)count * sizeof(SortEntry));
+    if (!entries) {
+        fprintf(stderr, "dedupe_axis: out of memory sorting %d points\n", count);
+        exit(1);
+    }
     for (int i = 0; i < count; i++) {
         entries[i].value = use_lon ? points[i].lon : points[i].lat;
         entries[i].idx = i;

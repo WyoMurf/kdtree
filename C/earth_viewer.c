@@ -575,7 +575,7 @@ static size_t g_points_drawn = 0;
  * color buffer, and an untextured mesh (material's texture defaults to
  * raylib's white 1x1) needs no UVs either. */
 #define DOT_BATCH_MAX_QUADS 16384 /* 4 verts/quad * 16384 = 65536 = raylib's Mesh.indices (unsigned short) limit, exactly */
-#define MAX_VISIBLE_DOTS_PER_FRAME 200000 /* headroom above this dataset's ~170,603 total cities -- see README-cities.md */
+#define MAX_VISIBLE_DOTS_PER_FRAME 300000 /* headroom above cities500's ~235,206 total places -- see README-cities.md */
 #define DOT_BATCH_COUNT ((MAX_VISIBLE_DOTS_PER_FRAME + DOT_BATCH_MAX_QUADS - 1) / DOT_BATCH_MAX_QUADS)
 
 typedef struct {
