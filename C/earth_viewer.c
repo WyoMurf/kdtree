@@ -455,7 +455,9 @@ int main(void) {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
     InitWindow(1280, 720, "Earth Cities Viewer");
 
-    OrbitCamera oc = { .lon = 0.0, .lat = 20.0, .altitude = INITIAL_ALTITUDE_KM };
+    /* Start over Cody, Wyoming (44.52634 N, 109.05653 W, per cities1000.txt's
+     * own entry for it) rather than an arbitrary point. */
+    OrbitCamera oc = { .lon = -109.05653, .lat = 44.52634, .altitude = INITIAL_ALTITUDE_KM };
     Camera3D camera = { 0 };
     camera.fovy = 60.0f;
     camera.projection = CAMERA_PERSPECTIVE;
