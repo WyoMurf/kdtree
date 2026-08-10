@@ -50,6 +50,22 @@ population lookup for on-screen labels), `cities.metatree` (the meta-tree of
 cell bounding boxes), and `cities.manifest` (index -> tile filename, for the
 meta-tree's items).
 
+EARTH TEXTURE (optional):
+
+For a photo-real globe instead of a plain colored sphere, download a real
+equirectangular Earth texture into the same city-data directory as
+`earth_daymap.jpg`, e.g. the free (CC BY 4.0), NASA-imagery-based texture
+from Solar System Scope:
+
+    curl -o earth_daymap.jpg https://www.solarsystemscope.com/textures/download/2k_earth_daymap.jpg
+
+`earth_viewer` looks for this file at startup and falls back to the plain
+sphere automatically if it's missing. Note: raylib's JPEG loader
+(`SUPPORT_FILEFORMAT_JPG` in raylib's `config.h`) is off by default in a
+from-source raylib build -- if `earth_viewer`'s startup log says it found
+the file but couldn't load it as a texture, enable that flag and rebuild
+raylib, or use a PNG texture instead.
+
 RUNNING:
 
 From that same directory:
@@ -70,9 +86,6 @@ KNOWN LIMITATIONS (deliberate v1 scope, not oversights):
   incorrect) bounding box in the meta-tree -- a minor loading-eagerness
   cost, not a rendering bug, since every individual point still gets its own
   precise visibility test regardless of which cell it came from.
-- The globe is a plain colored sphere with a wireframe grid, not a textured
-  photo-real Earth -- texturing with a real image is a natural follow-up,
-  intentionally left out of this first pass.
 - No label-collision avoidance: in a dense area (e.g. Madrid's many close
   suburbs), several labels can overlap. A real map application would hide
   overlapping labels by priority; this viewer doesn't yet.

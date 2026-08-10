@@ -34,6 +34,13 @@
 #define MAX_ALTITUDE_KM 150000.0f
 #define INITIAL_ALTITUDE_KM 20000.0f /* ~3.1 Earth radii out: a "respectful distance" */
 
+/* Optional real Earth texture, looked for in the current directory --
+ * see README-cities.md for where to download it. Not required: if it's
+ * absent, main() falls back to the original plain colored sphere. */
+#define EARTH_TEXTURE_PATH "earth_daymap.jpg"
+#define EARTH_SPHERE_RINGS 90
+#define EARTH_SPHERE_SLICES 180
+
 static double DegToRad(double d) { return d * (M_PI / 180.0); }
 
 static Vector3 LonLatToCartesian(double lonDeg, double latDeg, float radiusKm) {
@@ -53,6 +60,65 @@ static Vector3 LonLatToCartesian(double lonDeg, double latDeg, float radiusKm) {
         (float)(radiusKm * sin(latRad)),
         (float)(radiusKm * cl * sin(lonRad))
     };
+}
+
+/* Builds a UV-sphere textured with an equirectangular Earth image, using the
+ * SAME LonLatToCartesian() that places every city dot -- so the texture and
+ * the dots are guaranteed to agree on where a given (lonDeg, latDeg) lands,
+ * the same way the camera and the dots were made to agree when the
+ * east-west mirroring bug was fixed. UV coordinates are derived from the
+ * raw (lonDeg, latDeg) fed into that function, not from the Cartesian
+ * result, so the vertex-position negation-of-longitude trick inside
+ * LonLatToCartesian has no effect on texture alignment. Standard
+ * equirectangular layout: u=0 at lon=-180 (west edge), u=1 at lon=+180,
+ * increasing eastward; v=0 at the north pole (lat=+90), v=1 at the south
+ * pole (lat=-90). */
+static Mesh GenEarthSphereMesh(float radiusKm, int rings, int slices) {
+    int ringVerts = slices + 1;
+    int vertexCount = (rings + 1) * ringVerts;
+    int triangleCount = rings * slices * 2;
+
+    Mesh mesh = { 0 };
+    mesh.vertexCount = vertexCount;
+    mesh.triangleCount = triangleCount;
+    mesh.vertices = RL_MALLOC(sizeof(float) * 3 * (size_t)vertexCount);
+    mesh.normals = RL_MALLOC(sizeof(float) * 3 * (size_t)vertexCount);
+    mesh.texcoords = RL_MALLOC(sizeof(float) * 2 * (size_t)vertexCount);
+    mesh.indices = RL_MALLOC(sizeof(unsigned short) * 3 * (size_t)triangleCount);
+
+    int v = 0;
+    for (int r = 0; r <= rings; r++) {
+        double latDeg = 90.0 - (180.0 * r / rings);
+        for (int s = 0; s <= slices; s++) {
+            double lonDeg = -180.0 + (360.0 * s / slices);
+            Vector3 p = LonLatToCartesian(lonDeg, latDeg, radiusKm);
+            Vector3 n = Vector3Scale(p, 1.0f / radiusKm);
+            mesh.vertices[v * 3 + 0] = p.x;
+            mesh.vertices[v * 3 + 1] = p.y;
+            mesh.vertices[v * 3 + 2] = p.z;
+            mesh.normals[v * 3 + 0] = n.x;
+            mesh.normals[v * 3 + 1] = n.y;
+            mesh.normals[v * 3 + 2] = n.z;
+            mesh.texcoords[v * 2 + 0] = (float)s / (float)slices;
+            mesh.texcoords[v * 2 + 1] = (float)r / (float)rings;
+            v++;
+        }
+    }
+
+    int idx = 0;
+    for (int r = 0; r < rings; r++) {
+        for (int s = 0; s < slices; s++) {
+            unsigned short a = (unsigned short)(r * ringVerts + s);
+            unsigned short b = (unsigned short)(a + ringVerts);
+            unsigned short c = (unsigned short)(a + 1);
+            unsigned short d = (unsigned short)(b + 1);
+            mesh.indices[idx++] = a; mesh.indices[idx++] = c; mesh.indices[idx++] = b;
+            mesh.indices[idx++] = c; mesh.indices[idx++] = d; mesh.indices[idx++] = b;
+        }
+    }
+
+    UploadMesh(&mesh, false);
+    return mesh;
 }
 
 /* Standard sphere-horizon test: for a camera outside a sphere of radius R
@@ -455,6 +521,27 @@ int main(void) {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
     InitWindow(1280, 720, "Earth Cities Viewer");
 
+    /* LoadTexture needs a GL context, so this has to happen after
+     * InitWindow. Textured Earth is optional -- fall back to the plain
+     * sphere below if the file isn't there or fails to load. */
+    bool haveEarthTexture = false;
+    Texture2D earthTexture = { 0 };
+    Model earthModel = { 0 };
+    if (access(EARTH_TEXTURE_PATH, R_OK) == 0) {
+        earthTexture = LoadTexture(EARTH_TEXTURE_PATH);
+        if (earthTexture.id != 0) {
+            Mesh earthMesh = GenEarthSphereMesh(EARTH_RADIUS_KM, EARTH_SPHERE_RINGS, EARTH_SPHERE_SLICES);
+            earthModel = LoadModelFromMesh(earthMesh);
+            earthModel.materials[0].maps[MATERIAL_MAP_ALBEDO].texture = earthTexture;
+            haveEarthTexture = true;
+            printf("Loaded Earth texture: %s\n", EARTH_TEXTURE_PATH);
+        } else {
+            printf("Warning: found %s but couldn't load it as a texture; using a plain sphere.\n", EARTH_TEXTURE_PATH);
+        }
+    } else {
+        printf("No %s found; using a plain sphere (see README-cities.md to add a real texture).\n", EARTH_TEXTURE_PATH);
+    }
+
     /* Start over Cody, Wyoming (44.52634 N, 109.05653 W, per cities1000.txt's
      * own entry for it) rather than an arbitrary point. */
     OrbitCamera oc = { .lon = -109.05653, .lat = 44.52634, .altitude = INITIAL_ALTITUDE_KM };
@@ -491,10 +578,23 @@ int main(void) {
         ClearBackground((Color){ 5, 5, 15, 255 });
 
         BeginMode3D(camera);
-            DrawSphere((Vector3){ 0, 0, 0 }, EARTH_RADIUS_KM, (Color){ 25, 60, 95, 255 });
-            DrawSphereWires((Vector3){ 0, 0, 0 }, EARTH_RADIUS_KM * 1.001f, 18, 36, (Color){ 255, 255, 255, 40 });
-
+            /* Backface culling stays off for the Earth mesh draw too: at
+             * close range, culling was (for reasons not fully pinned down --
+             * possibly a Zink/NVK-specific winding/rasterization quirk,
+             * confirmed unrelated to LonLatToCartesian or the mesh's own
+             * vertex data via a minimal standalone repro) discarding the
+             * near-side triangles and letting the antipodal far side win the
+             * depth test instead. Disabling it costs nothing for one modest,
+             * single, opaque mesh and empirically fixes it at every altitude
+             * tested. */
             rlDisableBackfaceCulling();
+            if (haveEarthTexture) {
+                DrawModel(earthModel, (Vector3){ 0, 0, 0 }, 1.0f, WHITE);
+            } else {
+                DrawSphere((Vector3){ 0, 0, 0 }, EARTH_RADIUS_KM, (Color){ 25, 60, 95, 255 });
+                DrawSphereWires((Vector3){ 0, 0, 0 }, EARTH_RADIUS_KM * 1.001f, 18, 36, (Color){ 255, 255, 255, 40 });
+            }
+
             rlBegin(RL_QUADS);
             WalkMetaTree(0, frustum, camera.position, oc.altitude);
             rlEnd();
@@ -521,6 +621,10 @@ int main(void) {
         EndDrawing();
     }
 
+    if (haveEarthTexture) {
+        UnloadModel(earthModel);
+        UnloadTexture(earthTexture);
+    }
     CloseWindow();
 
     for (size_t i = 0; i < g_manifest_count; i++) {
