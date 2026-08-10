@@ -663,8 +663,8 @@ static void sel_k(kd_list *items, coord_t k, int disc, kd_list **lo, kd_list **e
  */
 {
     register kd_list *idx, *median;
-    register int cmp_val;
-    int lo_val;
+    coord_t cmp_val;
+    coord_t lo_val;
 
     idx = items;
     *lo = *eq = *hi = NIL;
