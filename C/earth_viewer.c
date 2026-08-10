@@ -455,6 +455,75 @@ static Vector3 g_billboardRight = { 1.0f, 0.0f, 0.0f };
 static Vector3 g_billboardUp = { 0.0f, 1.0f, 0.0f };
 static size_t g_points_drawn = 0;
 
+/* City dots used to be drawn one at a time via rlBegin(RL_QUADS)/rlVertex3f
+ * -- correct, but a real, measured performance problem: ~88k individual
+ * immediate-mode vertex calls per frame (rlVertex3f/rlColor4ub/rlTexCoord2f,
+ * each a real function call with rlgl's per-vertex batch-buffer bookkeeping)
+ * capped this viewer at ~23 FPS at typical viewing distance regardless of
+ * anything else in the scene, confirmed by disabling dot rendering alone and
+ * watching FPS jump straight to a smooth 60 (verified: the Earth mesh's own
+ * resolution/texture size, separately investigated, were NOT the
+ * bottleneck).
+ *
+ * Fix: batch the same billboard-quad math into plain CPU arrays instead of
+ * calling into rlgl per vertex, then upload each batch in one bulk
+ * UpdateMeshBuffer call and draw it with one DrawMesh call. raylib's
+ * Mesh.indices is still the hard 16-bit-per-mesh limit seen with the Earth
+ * mesh, so quads are split across several fixed-capacity batch meshes the
+ * same way the Earth sphere is split into latitude bands -- the difference
+ * here is the *positions* change every frame (billboards always face the
+ * camera, and which cities are visible changes as you move), while the
+ * *index* buffer (which vertices form which triangles) never does, so it's
+ * uploaded once at startup and only ever the position buffer is refreshed
+ * per frame. Color and UV are dropped entirely -- every dot was always the
+ * same flat amber color (rlColor4ub's argument never varied), so a shared
+ * Material's diffuse tint reproduces that exactly without a per-vertex
+ * color buffer, and an untextured mesh (material's texture defaults to
+ * raylib's white 1x1) needs no UVs either. */
+#define DOT_BATCH_MAX_QUADS 16384 /* 4 verts/quad * 16384 = 65536 = raylib's Mesh.indices (unsigned short) limit, exactly */
+#define MAX_VISIBLE_DOTS_PER_FRAME 200000 /* headroom above this dataset's ~170,603 total cities -- see README-cities.md */
+#define DOT_BATCH_COUNT ((MAX_VISIBLE_DOTS_PER_FRAME + DOT_BATCH_MAX_QUADS - 1) / DOT_BATCH_MAX_QUADS)
+
+typedef struct {
+    Mesh mesh;      /* capacity DOT_BATCH_MAX_QUADS quads; mesh.vertices is written into directly every frame */
+    int quadCount;  /* how many of those quads are actually filled this frame */
+} DotBatch;
+
+static DotBatch g_dotBatches[DOT_BATCH_COUNT];
+static int g_dotBatchesUsed = 0; /* highest batch touched this frame, +1 */
+static Material g_dotMaterial = { 0 };
+
+static void InitDotBatches(void) {
+    g_dotMaterial = LoadMaterialDefault();
+    g_dotMaterial.maps[MATERIAL_MAP_DIFFUSE].color = (Color){ 255, 210, 90, 255 }; /* warm amber marker dots */
+
+    for (int b = 0; b < DOT_BATCH_COUNT; b++) {
+        int maxVerts = DOT_BATCH_MAX_QUADS * 4;
+        int maxTris = DOT_BATCH_MAX_QUADS * 2;
+
+        Mesh mesh = { 0 };
+        mesh.vertexCount = maxVerts;
+        mesh.triangleCount = maxTris; /* capacity; per-frame draws lower this to quadCount*2 */
+        mesh.vertices = RL_MALLOC(sizeof(float) * 3 * (size_t)maxVerts);
+        mesh.indices = RL_MALLOC(sizeof(unsigned short) * 3 * (size_t)maxTris);
+        if (!mesh.vertices || !mesh.indices) {
+            fprintf(stderr, "InitDotBatches: out of memory allocating dot batch %d\n", b);
+            exit(1);
+        }
+        memset(mesh.vertices, 0, sizeof(float) * 3 * (size_t)maxVerts);
+
+        for (int q = 0; q < DOT_BATCH_MAX_QUADS; q++) {
+            unsigned short v0 = (unsigned short)(q * 4);
+            mesh.indices[q * 6 + 0] = v0;     mesh.indices[q * 6 + 1] = v0 + 1; mesh.indices[q * 6 + 2] = v0 + 2;
+            mesh.indices[q * 6 + 3] = v0;     mesh.indices[q * 6 + 4] = v0 + 2; mesh.indices[q * 6 + 5] = v0 + 3;
+        }
+
+        UploadMesh(&mesh, true); /* dynamic: positions are re-uploaded every frame */
+        g_dotBatches[b].mesh = mesh;
+        g_dotBatches[b].quadCount = 0;
+    }
+}
+
 /* A fixed world-space size looks fine from far away (shrinks correctly with
  * perspective) but is far too large up close: real neighboring towns in a
  * densely-settled region can be closer together than a generously-sized
@@ -473,6 +542,11 @@ static float CityMarkerWorldSize(float distKm, long population) {
 }
 
 static void DrawCityPoint(Vector3 pos, float sizeKm) {
+    size_t globalQuadIdx = g_points_drawn;
+    size_t batchIdx = globalQuadIdx / DOT_BATCH_MAX_QUADS;
+    if (batchIdx >= DOT_BATCH_COUNT) return; /* hit MAX_VISIBLE_DOTS_PER_FRAME; should never happen at this dataset's scale */
+    size_t localQuadIdx = globalQuadIdx % DOT_BATCH_MAX_QUADS;
+
     Vector3 right = Vector3Scale(g_billboardRight, sizeKm);
     Vector3 up = Vector3Scale(g_billboardUp, sizeKm);
     Vector3 p0 = Vector3Subtract(Vector3Subtract(pos, right), up);
@@ -480,11 +554,15 @@ static void DrawCityPoint(Vector3 pos, float sizeKm) {
     Vector3 p2 = Vector3Add(Vector3Add(pos, right), up);
     Vector3 p3 = Vector3Add(Vector3Subtract(pos, right), up);
 
-    rlColor4ub(255, 210, 90, 255); /* warm amber marker dots */
-    rlTexCoord2f(0.0f, 1.0f); rlVertex3f(p0.x, p0.y, p0.z);
-    rlTexCoord2f(1.0f, 1.0f); rlVertex3f(p1.x, p1.y, p1.z);
-    rlTexCoord2f(1.0f, 0.0f); rlVertex3f(p2.x, p2.y, p2.z);
-    rlTexCoord2f(0.0f, 0.0f); rlVertex3f(p3.x, p3.y, p3.z);
+    DotBatch *batch = &g_dotBatches[batchIdx];
+    float *v = &batch->mesh.vertices[localQuadIdx * 4 * 3];
+    v[0] = p0.x; v[1] = p0.y; v[2] = p0.z;
+    v[3] = p1.x; v[4] = p1.y; v[5] = p1.z;
+    v[6] = p2.x; v[7] = p2.y; v[8] = p2.z;
+    v[9] = p3.x; v[10] = p3.y; v[11] = p3.z;
+    batch->quadCount = (int)localQuadIdx + 1;
+    if ((int)batchIdx + 1 > g_dotBatchesUsed) g_dotBatchesUsed = (int)batchIdx + 1;
+
     g_points_drawn++;
 }
 
@@ -614,6 +692,7 @@ int main(void) {
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
     InitWindow(1280, 720, "Earth Cities Viewer");
+    InitDotBatches(); /* needs a GL context, so after InitWindow */
 
     /* LoadTexture needs a GL context, so this has to happen after
      * InitWindow. Textured Earth is optional -- fall back to the plain
@@ -678,6 +757,8 @@ int main(void) {
 
         g_points_drawn = 0;
         g_label_count = 0;
+        for (int b = 0; b < g_dotBatchesUsed; b++) g_dotBatches[b].quadCount = 0;
+        g_dotBatchesUsed = 0;
 
         BeginDrawing();
         ClearBackground((Color){ 5, 5, 15, 255 });
@@ -696,13 +777,21 @@ int main(void) {
                 DrawSphereWires((Vector3){ 0, 0, 0 }, EARTH_RADIUS_KM * 1.001f, 18, 36, (Color){ 255, 255, 255, 40 });
             }
 
-            /* City-dot billboards are camera-facing quads built by hand
-             * (rlVertex3f below), not a wound mesh -- backface culling has
-             * to stay off for them regardless of the Earth mesh's winding. */
+            /* City-dot billboards are camera-facing quads, not a wound mesh
+             * -- backface culling has to stay off for them regardless of
+             * the Earth mesh's winding. WalkMetaTree/DrawCityPoint fill the
+             * batch meshes below (see their comment); the actual upload and
+             * draw happens after traversal completes. */
             rlDisableBackfaceCulling();
-            rlBegin(RL_QUADS);
             WalkMetaTree(0, frustum, camera.position, oc.altitude);
-            rlEnd();
+            for (int b = 0; b < g_dotBatchesUsed; b++) {
+                DotBatch *batch = &g_dotBatches[b];
+                if (batch->quadCount == 0) continue;
+                UpdateMeshBuffer(batch->mesh, RL_DEFAULT_SHADER_ATTRIB_LOCATION_POSITION,
+                    batch->mesh.vertices, (int)(sizeof(float) * 3 * (size_t)batch->quadCount * 4), 0);
+                batch->mesh.triangleCount = batch->quadCount * 2;
+                DrawMesh(batch->mesh, g_dotMaterial, MatrixIdentity());
+            }
             rlEnableBackfaceCulling();
         EndMode3D();
 
@@ -731,6 +820,8 @@ int main(void) {
         free(earthMeshes);
         UnloadMaterial(earthMaterial); /* also unloads earthMaterial's texture */
     }
+    for (int b = 0; b < DOT_BATCH_COUNT; b++) UnloadMesh(g_dotBatches[b].mesh);
+    UnloadMaterial(g_dotMaterial); /* untextured -- only unloads the shared default shader/texture references, both no-ops */
     CloseWindow();
 
     for (size_t i = 0; i < g_manifest_count; i++) {
