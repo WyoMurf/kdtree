@@ -57,7 +57,11 @@ equirectangular Earth texture into the same city-data directory as
 `earth_daymap.jpg`, e.g. the free (CC BY 4.0), NASA-imagery-based texture
 from Solar System Scope:
 
-    curl -o earth_daymap.jpg https://www.solarsystemscope.com/textures/download/2k_earth_daymap.jpg
+    curl -o earth_daymap.jpg https://www.solarsystemscope.com/textures/download/8k_earth_daymap.jpg
+
+(a 2k version is also available at the same path with `2k_` in place of
+`8k_`, if bandwidth or disk space is tight -- the mesh resolution and city
+dots look identical either way, only the close-up terrain detail differs.)
 
 `earth_viewer` looks for this file at startup and falls back to the plain
 sphere automatically if it's missing. Note: raylib's JPEG loader

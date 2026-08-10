@@ -135,8 +135,14 @@ static int item_func(kd_generic arg, kd_generic *val, kd_2d_f64_box size) {
 
 static void add_point(Cell *cell, uint64_t geonameid, double lon, double lat) {
     if (cell->count >= cell->capacity) {
-        cell->capacity = cell->capacity ? cell->capacity * 2 : 16;
-        cell->points = realloc(cell->points, (size_t)cell->capacity * sizeof(CityPoint));
+        size_t new_capacity = cell->capacity ? (size_t)cell->capacity * 2 : 16;
+        CityPoint *new_points = realloc(cell->points, new_capacity * sizeof(CityPoint));
+        if (!new_points) {
+            fprintf(stderr, "add_point: out of memory growing cell to %zu points\n", new_capacity);
+            exit(1);
+        }
+        cell->points = new_points;
+        cell->capacity = (int)new_capacity;
     }
     cell->points[cell->count].geonameid = geonameid;
     cell->points[cell->count].lon = lon;

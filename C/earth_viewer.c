@@ -38,13 +38,13 @@
  * see README-cities.md for where to download it. Not required: if it's
  * absent, main() falls back to the original plain colored sphere. */
 #define EARTH_TEXTURE_PATH "earth_daymap.jpg"
-#define EARTH_SPHERE_RINGS 360
-#define EARTH_SPHERE_SLICES 720
+#define EARTH_SPHERE_RINGS 720
+#define EARTH_SPHERE_SLICES 1440
 
 /* raylib's Mesh.indices is `unsigned short *` (see raylib.h) -- a hard
  * 16-bit limit on vertex count PER MESH, baked into the library itself.
- * EARTH_SPHERE_RINGS/SLICES above exceed that in one mesh (361*721 =
- * 260,281 vertices), so BuildEarthMeshes below splits the sphere into
+ * EARTH_SPHERE_RINGS/SLICES above exceed that in one mesh (721*1441 =
+ * 1,038,961 vertices), so BuildEarthMeshes below splits the sphere into
  * several latitude bands, each its own Mesh under the limit, all sharing
  * one Material at draw time -- see its comment for the split math. */
 
@@ -106,6 +106,15 @@ static Mesh GenEarthSphereMeshBand(float radiusKm, int rings, int slices, int ro
     mesh.normals = RL_MALLOC(sizeof(float) * 3 * (size_t)vertexCount);
     mesh.texcoords = RL_MALLOC(sizeof(float) * 2 * (size_t)vertexCount);
     mesh.indices = RL_MALLOC(sizeof(unsigned short) * 3 * (size_t)triangleCount);
+    /* Each band now allocates several MB (up to ~63,404 vertices x 32 bytes
+     * of position/normal/texcoord data), versus the much smaller buffers
+     * before the resolution bump -- worth actually checking these now,
+     * rather than segfaulting mid-fill-loop on a NULL return under memory
+     * pressure. */
+    if (!mesh.vertices || !mesh.normals || !mesh.texcoords || !mesh.indices) {
+        fprintf(stderr, "GenEarthSphereMeshBand: out of memory allocating a %d-vertex mesh\n", vertexCount);
+        exit(1);
+    }
 
     int v = 0;
     for (int r = rowStart; r <= rowEnd; r++) {
