@@ -38,8 +38,16 @@
  * see README-cities.md for where to download it. Not required: if it's
  * absent, main() falls back to the original plain colored sphere. */
 #define EARTH_TEXTURE_PATH "earth_daymap.jpg"
-#define EARTH_SPHERE_RINGS 90
-#define EARTH_SPHERE_SLICES 180
+#define EARTH_SPHERE_RINGS 180
+#define EARTH_SPHERE_SLICES 360
+
+/* raylib's Mesh.indices is `unsigned short *` (see raylib.h) -- a hard
+ * 16-bit limit on vertex count baked into the library itself, not something
+ * GenEarthSphereMesh can widen. Catch it at compile time instead of letting
+ * a future bump of RINGS/SLICES silently wrap the index buffer and corrupt
+ * the mesh with no warning. */
+_Static_assert((EARTH_SPHERE_RINGS + 1) * (EARTH_SPHERE_SLICES + 1) <= 65536,
+    "EARTH_SPHERE_RINGS/SLICES produce too many vertices for raylib's 16-bit Mesh.indices");
 
 static double DegToRad(double d) { return d * (M_PI / 180.0); }
 
@@ -77,6 +85,17 @@ static Mesh GenEarthSphereMesh(float radiusKm, int rings, int slices) {
     int ringVerts = slices + 1;
     int vertexCount = (rings + 1) * ringVerts;
     int triangleCount = rings * slices * 2;
+
+    /* Runtime backstop for the same 16-bit Mesh.indices limit the
+     * _Static_assert on EARTH_SPHERE_RINGS/SLICES checks at compile time --
+     * this function takes rings/slices as plain parameters, so nothing
+     * stops a future caller from passing something the static assert never
+     * sees. */
+    if (vertexCount > 65536) {
+        fprintf(stderr, "GenEarthSphereMesh: %d rings x %d slices = %d vertices, "
+            "exceeds raylib's 16-bit Mesh.indices limit (65536)\n", rings, slices, vertexCount);
+        exit(1);
+    }
 
     Mesh mesh = { 0 };
     mesh.vertexCount = vertexCount;
@@ -544,6 +563,9 @@ int main(void) {
             printf("Loaded Earth texture: %s\n", EARTH_TEXTURE_PATH);
         } else {
             printf("Warning: found %s but couldn't load it as a texture; using a plain sphere.\n", EARTH_TEXTURE_PATH);
+            printf("  (if it's a .jpg: raylib's JPEG loader may be disabled -- SUPPORT_FILEFORMAT_JPG\n");
+            printf("  is off in a default raylib build. Enable it in raylib's config.h and rebuild,\n");
+            printf("  or use a PNG texture instead. See README-cities.md.)\n");
         }
     } else {
         printf("No %s found; using a plain sphere (see README-cities.md to add a real texture).\n", EARTH_TEXTURE_PATH);

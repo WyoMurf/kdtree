@@ -4,6 +4,10 @@ CC = gcc
 CFLAGS = -std=c11 -g -Wall -Wno-unused -fPIC
 LDFLAGS = -lm
 
+# Machine-specific path to a locally-built raylib checkout (see viewer/
+# earth_viewer below, and the CI note on `all` below).
+RAYLIB_DIR = /home/murf/external-sources/raylib/src
+
 # viewer is deliberately not part of `all`: it links against a locally-built
 # raylib via a machine-specific path (see the viewer target below), which
 # CI has no reason to install - `make test` never touches viewer, it only
@@ -12,12 +16,25 @@ LDFLAGS = -lm
 all: libkdtree.so libkdtree.a fits2kd csv2fits kd2lod build_metatree
 
 viewer: viewer.c include/kdtree.h include/kd2lod.h
-	$(CC) $(CFLAGS) -std=gnu11 viewer.c -o $@ -Iinclude -I/home/murf/external-sources/raylib/src -L/home/murf/external-sources/raylib/src -Wl,-rpath,/home/murf/external-sources/raylib/src -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
+	$(CC) $(CFLAGS) -std=gnu11 viewer.c -o $@ -Iinclude -I$(RAYLIB_DIR) -L$(RAYLIB_DIR) -Wl,-rpath,$(RAYLIB_DIR) -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
 
 # earth_viewer is excluded from `all` for the same reason as viewer above: it
 # links against a locally-built raylib CI has no reason to install.
+#
+# The JPEG check below is a build-time nudge, not a hard requirement:
+# earth_daymap.jpg is optional (see README-cities.md), and earth_viewer
+# falls back to a plain sphere at runtime if raylib can't load it -- this
+# just surfaces *why* that fallback might trigger before it's a surprise at
+# runtime, since SUPPORT_FILEFORMAT_JPG is off in a default raylib build.
 earth_viewer: earth_viewer.c include/kdtree.h
-	$(CC) $(CFLAGS) -std=gnu11 earth_viewer.c -o $@ -Iinclude -I/home/murf/external-sources/raylib/src -L/home/murf/external-sources/raylib/src -Wl,-rpath,/home/murf/external-sources/raylib/src -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
+	@if ! grep -Eq '^[[:space:]]*#define[[:space:]]+SUPPORT_FILEFORMAT_JPG[[:space:]]+1' $(RAYLIB_DIR)/config.h 2>/dev/null; then \
+		echo "Note: $(RAYLIB_DIR)/config.h doesn't have SUPPORT_FILEFORMAT_JPG enabled."; \
+		echo "      earth_viewer will still build, but a real earth_daymap.jpg texture"; \
+		echo "      (see README-cities.md) won't load -- it'll fall back to a plain"; \
+		echo "      sphere. Set SUPPORT_FILEFORMAT_JPG to 1 there and rebuild raylib"; \
+		echo "      to fix, or supply a PNG texture instead (enabled by default)."; \
+	fi
+	$(CC) $(CFLAGS) -std=gnu11 earth_viewer.c -o $@ -Iinclude -I$(RAYLIB_DIR) -L$(RAYLIB_DIR) -Wl,-rpath,$(RAYLIB_DIR) -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
 
 fits2kd: fits2kd.c libkdtree.a
 	$(CC) $(CFLAGS) -std=gnu11 -O3 fits2kd.c libkdtree.a -o $@ -Iinclude -lcfitsio -lm
