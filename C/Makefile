@@ -14,6 +14,11 @@ all: libkdtree.so libkdtree.a fits2kd csv2fits kd2lod build_metatree
 viewer: viewer.c include/kdtree.h include/kd2lod.h
 	$(CC) $(CFLAGS) -std=gnu11 viewer.c -o $@ -Iinclude -I/home/murf/external-sources/raylib/src -L/home/murf/external-sources/raylib/src -Wl,-rpath,/home/murf/external-sources/raylib/src -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
 
+# earth_viewer is excluded from `all` for the same reason as viewer above: it
+# links against a locally-built raylib CI has no reason to install.
+earth_viewer: earth_viewer.c include/kdtree.h
+	$(CC) $(CFLAGS) -std=gnu11 earth_viewer.c -o $@ -Iinclude -I/home/murf/external-sources/raylib/src -L/home/murf/external-sources/raylib/src -Wl,-rpath,/home/murf/external-sources/raylib/src -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
+
 fits2kd: fits2kd.c libkdtree.a
 	$(CC) $(CFLAGS) -std=gnu11 -O3 fits2kd.c libkdtree.a -o $@ -Iinclude -lcfitsio -lm
 
@@ -22,6 +27,12 @@ kd2lod: kd2lod.c include/kdtree.h include/kd2lod.h
 
 build_metatree: build_metatree.c libkdtree.a
 	$(CC) $(CFLAGS) -std=gnu11 -O3 build_metatree.c libkdtree.a -o $@ -Iinclude -lpthread -lm
+
+geonames2kd: geonames2kd.c libkdtree.a
+	$(CC) $(CFLAGS) -std=gnu11 -O3 geonames2kd.c libkdtree.a -o $@ -Iinclude -lm
+
+build_city_metatree: build_city_metatree.c libkdtree.a
+	$(CC) $(CFLAGS) -std=gnu11 -O3 build_city_metatree.c libkdtree.a -o $@ -Iinclude -lm
 
 csv2fits: csv2fits.c
 	$(CC) $(CFLAGS) -std=gnu11 -O3 csv2fits.c -o $@ -lcfitsio -lz -lm
@@ -60,7 +71,7 @@ libkdtree.a: 2d/kd.o 2d/kd_64.o 2d/kd_128.o 2d/kd_f64.o 3d/kd.o 3d/kd_64.o 3d/kd
 	ar rcs $@ 2d/kd.o 2d/kd_64.o 2d/kd_128.o 2d/kd_f64.o 3d/kd.o 3d/kd_64.o 3d/kd_128.o 3d/kd_f64.o geo_utils.o
 
 clean:
-	rm -f 2d/*.o 3d/*.o geo_utils.o libkdtree.so libkdtree.a 2d/test_* 3d/test_* viewer fits2kd csv2fits kd2lod build_metatree geo_utils_test
+	rm -f 2d/*.o 3d/*.o geo_utils.o libkdtree.so libkdtree.a 2d/test_* 3d/test_* viewer fits2kd csv2fits kd2lod build_metatree geo_utils_test earth_viewer geonames2kd build_city_metatree
 
 install: libkdtree.so libkdtree.a
 	install -D -m 755 libkdtree.so $(DESTDIR)/usr/lib64/libkdtree.so
