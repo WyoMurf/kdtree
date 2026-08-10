@@ -37,7 +37,13 @@
 static double DegToRad(double d) { return d * (M_PI / 180.0); }
 
 static Vector3 LonLatToCartesian(double lonDeg, double latDeg, float radiusKm) {
-    double lonRad = DegToRad(lonDeg);
+    /* Longitude is negated here: raylib/OpenGL's right-handed, Y-up world
+     * means +sin(lon) for Z maps increasing (eastward) longitude to the
+     * geometrically wrong side once actually viewed through a standard
+     * look-at camera -- the whole globe came out mirrored east-west (north/
+     * south, driven by Y alone, was never affected). Negating flips it back
+     * without touching the north/south mapping at all. */
+    double lonRad = DegToRad(-lonDeg);
     double latRad = DegToRad(latDeg);
     double cl = cos(latRad);
     /* Y is the polar axis (matches raylib's Y-up world convention); north
