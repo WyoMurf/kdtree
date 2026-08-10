@@ -63,6 +63,22 @@ double vincenty_distance(double lat1, double lon1, double lat2, double lon2, dou
 uint64_t healpix_nested_index(double ra_or_lon_deg, double dec_or_lat_deg, int level);
 
 /*
+ * Inverse of healpix_nested_index(): converts a HEALPix pixel index at the
+ * given resolution `level` back into (ra_or_lon_deg, dec_or_lat_deg) --
+ * specifically, the center of that pixel, not necessarily the original
+ * point that was fed into healpix_nested_index() to land in it. Two
+ * variants are provided depending on which pixel-numbering scheme your
+ * index uses: healpix_nested_index() above produces NESTED indices, so most
+ * callers want healpix_nested_index_to_coords(); healpix_ring_index_to_coords()
+ * is provided for interoperability with RING-scheme indices from other
+ * HEALPix tools/libraries. Both return 0 on success or -1 if the index is
+ * out of range for the given level (valid indices are [0, 12*nside^2) where
+ * nside = 2^level).
+ */
+int healpix_nested_index_to_coords(int level, uint64_t nested_index, double *ra_or_lon_deg, double *dec_or_lat_deg);
+int healpix_ring_index_to_coords(int level, uint64_t ring_index, double *ra_or_lon_deg, double *dec_or_lat_deg);
+
+/*
  * Degrees/minutes/seconds <-> decimal degrees conversions, one pair per
  * bit-width flavor (C has no generics). Degrees and minutes are always
  * non-negative magnitudes; the separate `sign` parameter (+1 or -1) carries

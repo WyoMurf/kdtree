@@ -150,88 +150,221 @@ func interleaveBits(x, y uint32) uint64 {
 // [0, 360) astronomical range or the conventional [-180, 180) geographic
 // range; callers don't need to pre-normalize longitude before calling.
 func HealpixNestedIndex(raOrLonDeg, decOrLatDeg float64, level int) uint64 {
-	halfPi := math.Pi / 2.0
+	toRad := math.Pi / 180.0
 
+	// Normalize to [0, 360) so callers can pass geographic longitude
+	// ([-180, 180)) directly, same as right ascension ([0, 360), already a
+	// no-op here).
 	lon := math.Mod(raOrLonDeg, 360.0)
 	if lon < 0.0 {
 		lon += 360.0
 	}
 
-	phi := lon * (math.Pi / 180.0)
-	z := math.Sin(decOrLatDeg * (math.Pi / 180.0))
+	phi := lon * toRad
+	z := math.Sin(decOrLatDeg * toRad)
+	za := math.Abs(z)
 
-	nside := uint64(1) << uint(level)
-	facePixels := nside * nside
+	// tt is phi scaled so a full turn spans [0, 4) -- one unit per base-face
+	// column, matching the jrll/jpll face layout used by the inverse
+	// (healpixNestedToRing) below.
+	tt := math.Mod(phi, 2.0*math.Pi)
+	if tt < 0.0 {
+		tt += 2.0 * math.Pi
+	}
+	tt *= 2.0 / math.Pi
 
-	var xc, yc float64
-	if math.Abs(z) <= 2.0/3.0 {
-		xc = phi
-		yc = 1.5 * z
+	nside := int64(1) << uint(level)
+	var faceNum int64
+	var ix, iy uint32
+
+	if za <= 2.0/3.0 {
+		// Equatorial belt.
+		temp1 := float64(nside) * (0.5 + tt)
+		temp2 := float64(nside) * (z * 0.75)
+		jp := int64(math.Floor(temp1 - temp2)) // ascending edge line index
+		jm := int64(math.Floor(temp1 + temp2)) // descending edge line index
+		ifp := jp / nside
+		ifm := jm / nside
+		if ifp == ifm {
+			faceNum = ifp | 4
+		} else if ifp < ifm {
+			faceNum = ifp
+		} else {
+			faceNum = ifm + 8
+		}
+		ix = uint32(jm & (nside - 1))
+		iy = uint32(nside - (jp & (nside - 1)) - 1)
 	} else {
 		// Polar caps.
-		sgn := 1.0
-		if z < 0.0 {
-			sgn = -1.0
+		ntt := int64(tt)
+		if ntt >= 4 {
+			ntt = 3
 		}
-		sigma := math.Sqrt(3.0 * (1.0 - math.Abs(z)))
-		yc = sgn * (2.0 - sigma)
+		tp := tt - float64(ntt)
+		tmp := float64(nside) * math.Sqrt(3.0*(1.0-za))
 
-		// Find which of the 4 polar facets we are in.
-		facet := int(phi / halfPi)
-		if facet < 0 {
-			facet = 0
+		jp := int64(tp * tmp)         // increasing edge line index
+		jm := int64((1.0 - tp) * tmp) // decreasing edge line index
+		if jp >= nside {
+			jp = nside - 1
 		}
-		if facet > 3 {
-			facet = 3
+		if jm >= nside {
+			jm = nside - 1
 		}
-		phiC := (float64(facet) + 0.5) * halfPi
-		xc = phiC + (phi-phiC)*sigma
-	}
 
-	// Project to oblique grid coordinates (scaled by pi/2).
-	pa := xc / halfPi
-	pb := yc / halfPi
-
-	u := pa + pb/2.0
-	v := pa - pb/2.0
-
-	ku := math.Floor(u)
-	kv := math.Floor(v)
-	uFrac := u - ku
-	vFrac := v - kv
-
-	// Translate (ku, kv) oblique grid coordinate to base face ID (0..11).
-	kuI := int(ku)
-	kvI := int(kv)
-
-	var face uint64
-	if kuI >= 0 && kvI >= 0 {
-		if kuI < 4 && kvI < 4 {
-			face = uint64((4-kvI+kuI%4)%4 + 4) // Equatorial
+		if z >= 0.0 {
+			faceNum = ntt
+			ix = uint32(nside - jm - 1)
+			iy = uint32(nside - jp - 1)
 		} else {
-			face = uint64(kuI % 4) // North cap
+			faceNum = ntt + 8
+			ix = uint32(jp)
+			iy = uint32(jm)
 		}
-	} else if kuI < 0 && kvI < 0 {
-		kuMod := kuI % 4
-		if kuMod < 0 {
-			kuMod += 4
-		}
-		face = uint64(8 + kuMod) // South cap
 	}
 
-	// Grid coordinates inside the face.
-	i := uint32(uFrac * float64(nside))
-	j := uint32(vFrac * float64(nside))
-	if uint64(i) >= nside {
-		i = uint32(nside - 1)
+	facePixels := uint64(nside) * uint64(nside)
+	morton := interleaveBits(ix, iy)
+
+	return uint64(faceNum)*facePixels + morton
+}
+
+// deinterleaveBits de-interleaves a 64-bit Morton code back into its
+// original two 32-bit x/y components -- the inverse of interleaveBits, used
+// when converting a HEALPix NESTED pixel index back to a face's local (i, j)
+// grid coordinates.
+func deinterleaveBits(ip uint64) (x, y uint32) {
+	var xr, yr uint64
+	for i := uint(0); i < 32; i++ {
+		xr |= ((ip >> (2 * i)) & 1) << i
+		yr |= ((ip >> (2*i + 1)) & 1) << i
 	}
-	if uint64(j) >= nside {
-		j = uint32(nside - 1)
+	return uint32(xr), uint32(yr)
+}
+
+// healpixNestedToRing converts a HEALPix NESTED index to the equivalent
+// 0-based RING-scheme index, for the given nside. ok is false if
+// nestedIndex is out of range (>= 12*nside^2).
+func healpixNestedToRing(nside, nestedIndex int64) (ringIndex int64, ok bool) {
+	npix := 12 * nside * nside
+	if nestedIndex < 0 || nestedIndex >= npix {
+		return 0, false
 	}
 
-	// Interleave bits for NESTED scheme.
-	morton := interleaveBits(i, j)
-	return face*facePixels + morton
+	nside2 := nside * nside
+	faceNum := nestedIndex / nside2
+	ipf := uint64(nestedIndex % nside2)
+
+	ix, iy := deinterleaveBits(ipf)
+
+	jrll := [12]int64{2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4}
+	jpll := [12]int64{1, 3, 5, 7, 0, 2, 4, 6, 1, 3, 5, 7}
+
+	jr := jrll[faceNum]*nside - int64(ix) - int64(iy) - 1
+
+	var nr, nBefore, kshift int64
+	if jr < nside {
+		// North polar cap.
+		nr = jr
+		nBefore = 2 * nr * (nr - 1)
+		kshift = 0
+	} else if jr > 3*nside {
+		// South polar cap.
+		nr = 4*nside - jr
+		nBefore = npix - 2*(nr+1)*nr
+		kshift = 0
+	} else {
+		// Equatorial belt.
+		nr = nside
+		nBefore = 2*nside*(nside-1) + (jr-nside)*4*nside
+		kshift = (jr - nside) & 1
+	}
+
+	jp := (jpll[faceNum]*nr + int64(ix) - int64(iy) + 1 + kshift) / 2
+	if jp > 4*nr {
+		jp -= 4 * nr
+	}
+	if jp < 1 {
+		jp += 4 * nr
+	}
+
+	return nBefore + jp - 1, true
+}
+
+// HealpixRingIndexToCoords converts a HEALPix pixel index at the given
+// resolution level back into (lon/ra, lat/dec) -- specifically the center of
+// that pixel, not necessarily the original point that was fed into
+// HealpixNestedIndex to land in it. It expects a RING-scheme index, provided
+// for interoperability with RING-scheme indices from other HEALPix
+// tools/libraries; most callers, working with indices produced by
+// HealpixNestedIndex above, want HealpixNestedIndexToCoords instead. ok is
+// false if ringIndex is out of range (>= 12*nside^2 for the given level).
+func HealpixRingIndexToCoords(level int, ringIndex uint64) (lon, lat float64, ok bool) {
+	nside := int64(1) << uint(level)
+	npix := 12 * nside * nside
+	pRing := int64(ringIndex)
+	if pRing < 0 || pRing >= npix {
+		return 0, 0, false
+	}
+
+	ncap := 2 * nside * (nside - 1)
+	var z, phi float64
+	ip := pRing // 0-indexed, matches the canonical pix2ang_ring pseudocode's "ip"
+
+	if ip < ncap {
+		// North polar cap.
+		hip := float64(ip+1) / 2.0
+		fihip := math.Floor(hip)
+		irn := int64(math.Floor(math.Sqrt(hip-math.Sqrt(fihip)))) + 1
+		iphi := (ip + 1) - 2*irn*(irn-1)
+		z = 1.0 - float64(irn*irn)/(3.0*float64(nside)*float64(nside))
+		phi = (float64(iphi) - 0.5) * math.Pi / (2.0 * float64(irn))
+	} else if ip < npix-ncap {
+		// Equatorial belt.
+		ip1 := ip - ncap
+		irn := ip1/(4*nside) + nside
+		iphi := ip1%(4*nside) + 1
+		fodd := 0.5 * float64(1+int((irn+nside)%2))
+		z = float64(2*nside-irn) * 2.0 / (3.0 * float64(nside))
+		phi = (float64(iphi) - fodd) * math.Pi / (2.0 * float64(nside))
+	} else {
+		// South polar cap.
+		ip1 := npix - ip
+		hip := float64(ip1) / 2.0
+		fihip := math.Floor(hip)
+		irs := int64(math.Floor(math.Sqrt(hip-math.Sqrt(fihip)))) + 1
+		iphi := 4*irs + 1 - (ip1 - 2*irs*(irs-1))
+		z = -1.0 + float64(irs*irs)/(3.0*float64(nside)*float64(nside))
+		phi = (float64(iphi) - 0.5) * math.Pi / (2.0 * float64(irs))
+	}
+
+	ra := phi * (180.0 / math.Pi)
+	for ra < 0.0 {
+		ra += 360.0
+	}
+	for ra >= 360.0 {
+		ra -= 360.0
+	}
+
+	return ra, math.Asin(z) * (180.0 / math.Pi), true
+}
+
+// HealpixNestedIndexToCoords is the inverse of HealpixNestedIndex: it
+// converts a HEALPix pixel index at the given resolution level back into
+// (lon/ra, lat/dec) -- specifically the center of that pixel, not
+// necessarily the original point that was fed into HealpixNestedIndex to
+// land in it. It expects a NESTED-scheme index -- the same scheme
+// HealpixNestedIndex above produces, so most callers want this variant; see
+// HealpixRingIndexToCoords for interoperability with RING-scheme indices
+// from other HEALPix tools/libraries. ok is false if nestedIndex is out of
+// range (>= 12*nside^2 for the given level).
+func HealpixNestedIndexToCoords(level int, nestedIndex uint64) (lon, lat float64, ok bool) {
+	nside := int64(1) << uint(level)
+	ringIndex, valid := healpixNestedToRing(nside, int64(nestedIndex))
+	if !valid {
+		return 0, 0, false
+	}
+	return HealpixRingIndexToCoords(level, uint64(ringIndex))
 }
 
 // Box defines a 2D bounding box [left, bottom, right, top]

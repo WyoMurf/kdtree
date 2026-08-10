@@ -63,6 +63,12 @@ geonames2kd: geonames2kd.c libkdtree.a
 healpix_calc: healpix_calc.c geo_utils.o
 	$(CC) $(CFLAGS) -std=gnu11 -O3 healpix_calc.c geo_utils.o -o $@ -Iinclude -lm
 
+# healpix_to_coords.c's inverse conversion is geo_utils.h's other half of the
+# same wrapper story as healpix_calc above -- same link line, never had a
+# Makefile rule either.
+healpix_to_coords: healpix_to_coords.c geo_utils.o
+	$(CC) $(CFLAGS) -std=gnu11 -O3 healpix_to_coords.c geo_utils.o -o $@ -Iinclude -lm
+
 build_city_metatree: build_city_metatree.c libkdtree.a
 	$(CC) $(CFLAGS) -std=gnu11 -O3 build_city_metatree.c libkdtree.a -o $@ -Iinclude -lm
 
@@ -103,7 +109,7 @@ libkdtree.a: 2d/kd.o 2d/kd_64.o 2d/kd_128.o 2d/kd_f64.o 3d/kd.o 3d/kd_64.o 3d/kd
 	ar rcs $@ 2d/kd.o 2d/kd_64.o 2d/kd_128.o 2d/kd_f64.o 3d/kd.o 3d/kd_64.o 3d/kd_128.o 3d/kd_f64.o geo_utils.o
 
 clean:
-	rm -f 2d/*.o 3d/*.o geo_utils.o libkdtree.so libkdtree.a 2d/test_* 3d/test_* viewer fits2kd csv2fits kd2lod build_metatree geo_utils_test earth_viewer geonames2kd build_city_metatree healpix_calc
+	rm -f 2d/*.o 3d/*.o geo_utils.o libkdtree.so libkdtree.a 2d/test_* 3d/test_* viewer fits2kd csv2fits kd2lod build_metatree geo_utils_test earth_viewer geonames2kd build_city_metatree healpix_calc healpix_to_coords
 
 install: libkdtree.so libkdtree.a
 	install -D -m 755 libkdtree.so $(DESTDIR)/usr/lib64/libkdtree.so

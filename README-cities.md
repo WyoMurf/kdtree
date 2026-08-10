@@ -7,10 +7,10 @@ kd-tree over those cells' own bounding boxes, so the viewer only has to load
 the cells actually visible from the camera.
 
 It's dramatically smaller in scale than the star viewer -- ~170,000 places
-across ~150 non-empty cells, vs. Gaia's ~33,500 shards and 157 million stars
+across ~390 non-empty cells, vs. Gaia's ~33,500 shards and 157 million stars
 -- so it's also architecturally simpler: there's no need for the star
 viewer's `kd2lod` subtree-bounding-box/angular-collapse machinery. Every
-meta-tree cell is checked every frame (a scan of ~150 entries is trivial),
+meta-tree cell is checked every frame (a scan of ~390 entries is trivial),
 and every visible point in a loaded cell is drawn directly.
 
 DATA SOURCE:

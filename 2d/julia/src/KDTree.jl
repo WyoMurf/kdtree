@@ -2,7 +2,7 @@ module KDTree
 
 export serialize, get_bounds, get_serialized_bounds, get_mmap_bounds, MmapNode, Tree, Box, insert!, count_items, is_member, hard_delete!, really_delete!, badness, nearest, Priority, search, LEFT, BOTTOM, RIGHT, TOP,
        haversine_distance, vincenty_distance, dms_to_degrees, degrees_to_dms, EARTH_RADIUS_KM, EARTH_SEMI_MAJOR_AXIS_M, EARTH_FLATTENING,
-       healpix_nested_index
+       healpix_nested_index, healpix_nested_index_to_coords, healpix_ring_index_to_coords
 
 const Box{C<:Real} = NTuple{4, C}
 const LEFT = 1
@@ -201,73 +201,229 @@ astronomical range or the conventional [-180, 180) geographic range;
 callers don't need to pre-normalize longitude before calling.
 """
 function healpix_nested_index(ra_or_lon_deg::Float64, dec_or_lat_deg::Float64, level::Int)::UInt64
-    half_pi = pi / 2.0
-
+    # Normalize to [0, 360) so callers can pass geographic longitude
+    # ([-180, 180)) directly, same as right ascension ([0, 360), already a
+    # no-op here).
     lon = mod(ra_or_lon_deg, 360.0)
+    if lon < 0.0
+        lon += 360.0
+    end
 
     phi = lon * (pi / 180.0)
     z = sin(dec_or_lat_deg * (pi / 180.0))
+    za = abs(z)
 
-    nside = UInt64(1) << level
-    face_pixels = nside * nside
+    # tt is phi scaled so a full turn spans [0, 4) -- one unit per base-face
+    # column, matching the jrll/jpll face layout used by the inverse
+    # (healpix_nested_to_ring) below.
+    tt = mod(phi, 2.0 * pi)
+    if tt < 0.0
+        tt += 2.0 * pi
+    end
+    tt *= 2.0 / pi
 
-    local xc, yc
-    if abs(z) <= 2.0 / 3.0
-        xc = phi
-        yc = 1.5 * z
+    nside = Int64(1) << level
+    local face_num::Int64
+    local ix::UInt32, iy::UInt32
+
+    if za <= 2.0 / 3.0
+        # Equatorial belt.
+        temp1 = nside * (0.5 + tt)
+        temp2 = nside * (z * 0.75)
+        jp = Int64(floor(temp1 - temp2)) # ascending edge line index
+        jm = Int64(floor(temp1 + temp2)) # descending edge line index
+        ifp = jp ÷ nside
+        ifm = jm ÷ nside
+        face_num = (ifp == ifm) ? (ifp | 4) : ((ifp < ifm) ? ifp : (ifm + 8))
+        ix = UInt32(jm & (nside - 1))
+        iy = UInt32(nside - (jp & (nside - 1)) - 1)
     else
         # Polar caps.
-        sgn = z >= 0.0 ? 1.0 : -1.0
-        sigma = sqrt(3.0 * (1.0 - abs(z)))
-        yc = sgn * (2.0 - sigma)
-
-        # Find which of the 4 polar facets we are in.
-        facet = floor(Int, phi / half_pi)
-        facet = clamp(facet, 0, 3)
-        phi_c = (facet + 0.5) * half_pi
-        xc = phi_c + (phi - phi_c) * sigma
-    end
-
-    # Project to oblique grid coordinates (scaled by pi/2).
-    pa = xc / half_pi
-    pb = yc / half_pi
-
-    u = pa + pb / 2.0
-    v = pa - pb / 2.0
-
-    ku = floor(u)
-    kv = floor(v)
-    u_frac = u - ku
-    v_frac = v - kv
-
-    # Translate (ku, kv) oblique grid coordinate to base face ID (0..11).
-    ku_i = Int(ku)
-    kv_i = Int(kv)
-
-    face = UInt64(0)
-    if ku_i >= 0 && kv_i >= 0
-        if ku_i < 4 && kv_i < 4
-            face = UInt64(mod(4 - kv_i + mod(ku_i, 4), 4) + 4) # Equatorial
-        else
-            face = UInt64(mod(ku_i, 4)) # North cap
+        ntt = trunc(Int64, tt)
+        if ntt >= 4
+            ntt = 3
         end
-    elseif ku_i < 0 && kv_i < 0
-        face = UInt64(8 + mod(ku_i, 4)) # South cap
+        tp = tt - ntt
+        tmp = nside * sqrt(3.0 * (1.0 - za))
+
+        jp = trunc(Int64, tp * tmp)         # increasing edge line index
+        jm = trunc(Int64, (1.0 - tp) * tmp) # decreasing edge line index
+        if jp >= nside
+            jp = nside - 1
+        end
+        if jm >= nside
+            jm = nside - 1
+        end
+
+        if z >= 0.0
+            face_num = ntt
+            ix = UInt32(nside - jm - 1)
+            iy = UInt32(nside - jp - 1)
+        else
+            face_num = ntt + 8
+            ix = UInt32(jp)
+            iy = UInt32(jm)
+        end
     end
 
-    # Grid coordinates inside the face.
-    i = UInt32(floor(u_frac * nside))
-    j = UInt32(floor(v_frac * nside))
-    if i >= nside
-        i = UInt32(nside - 1)
+    face_pixels = UInt64(nside) * UInt64(nside)
+    morton = interleave_bits(ix, iy)
+
+    return UInt64(face_num) * face_pixels + morton
+end
+
+"""
+    deinterleave_bits(ip)
+
+De-interleaves a 64-bit Morton code back into its original two 32-bit x/y
+components -- the inverse of [`interleave_bits`](@ref), used when converting
+a HEALPix NESTED pixel index back to a face's local (i, j) grid coordinates.
+"""
+function deinterleave_bits(ip::UInt64)::Tuple{UInt32, UInt32}
+    x = UInt64(0)
+    y = UInt64(0)
+    for i in 0:31
+        x |= ((ip >> (2 * i)) & 1) << i
+        y |= ((ip >> (2 * i + 1)) & 1) << i
     end
-    if j >= nside
-        j = UInt32(nside - 1)
+    return UInt32(x), UInt32(y)
+end
+
+# face_num -> jr/jp base-face lookup tables for the RING scheme, indexed
+# 0-based in the reference C (arrays index 0..11); kept as plain 1-based
+# Julia tuples here and indexed via `face_num + 1` so the face_num=0 ->
+# value=2 (etc.) mapping is preserved exactly.
+const HEALPIX_JRLL = (2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4)
+const HEALPIX_JPLL = (1, 3, 5, 7, 0, 2, 4, 6, 1, 3, 5, 7)
+
+"""
+    healpix_nested_to_ring(nside, nested_index)
+
+Converts a HEALPix NESTED index to the equivalent 0-based RING-scheme index,
+for the given `nside`. Returns `-1` if `nested_index` is out of range
+(>= 12*nside^2).
+"""
+function healpix_nested_to_ring(nside::Int64, nested_index::Int64)::Int64
+    npix = 12 * nside * nside
+    if nested_index < 0 || nested_index >= npix
+        return -1
     end
 
-    # Interleave bits for NESTED scheme.
-    morton = interleave_bits(i, j)
-    return face * face_pixels + morton
+    nside2 = nside * nside
+    face_num = nested_index ÷ nside2
+    ipf = UInt64(nested_index % nside2)
+
+    ix, iy = deinterleave_bits(ipf)
+
+    jr = HEALPIX_JRLL[face_num + 1] * nside - Int64(ix) - Int64(iy) - 1
+
+    local nr::Int64, n_before::Int64, kshift::Int64
+    if jr < nside
+        nr = jr
+        n_before = 2 * nr * (nr - 1)
+        kshift = 0
+    elseif jr > 3 * nside
+        nr = 4 * nside - jr
+        n_before = npix - 2 * (nr + 1) * nr
+        kshift = 0
+    else
+        nr = nside
+        n_before = 2 * nside * (nside - 1) + (jr - nside) * 4 * nside
+        kshift = (jr - nside) & 1
+    end
+
+    jp = (HEALPIX_JPLL[face_num + 1] * nr + Int64(ix) - Int64(iy) + 1 + kshift) ÷ 2
+    if jp > 4 * nr
+        jp -= 4 * nr
+    end
+    if jp < 1
+        jp += 4 * nr
+    end
+
+    return n_before + jp - 1
+end
+
+"""
+    healpix_ring_index_to_coords(level, ring_index)
+
+Converts a HEALPix RING-scheme pixel index at the given resolution `level`
+back into the equatorial-style (ra, dec) or geographic (lon, lat) pair, in
+degrees, at the center of that pixel. Provided for interoperability with
+RING-scheme indices from other HEALPix tools/libraries -- most callers
+working with indices produced by [`healpix_nested_index`](@ref) want
+[`healpix_nested_index_to_coords`](@ref) instead. Returns `nothing` if
+`ring_index` is out of range for the given level.
+"""
+function healpix_ring_index_to_coords(level::Int, ring_index::UInt64)::Union{Nothing, Tuple{Float64, Float64}}
+    nside = Int64(1) << level
+    npix = 12 * nside * nside
+    p_ring = Int64(ring_index)
+    if p_ring < 0 || p_ring >= npix
+        return nothing
+    end
+
+    ncap = 2 * nside * (nside - 1)
+    local z::Float64, phi::Float64
+    ip = p_ring
+
+    if ip < ncap
+        # North polar cap
+        hip = (ip + 1) / 2.0
+        fihip = floor(hip)
+        irn = Int64(floor(sqrt(hip - sqrt(fihip)))) + 1
+        iphi = (ip + 1) - 2 * irn * (irn - 1)
+        z = 1.0 - Float64(irn * irn) / (3.0 * Float64(nside) * Float64(nside))
+        phi = (Float64(iphi) - 0.5) * pi / (2.0 * Float64(irn))
+    elseif ip < npix - ncap
+        # Equatorial belt
+        ip1 = ip - ncap
+        irn = ip1 ÷ (4 * nside) + nside
+        iphi = ip1 % (4 * nside) + 1
+        fodd = 0.5 * (1.0 + Float64((irn + nside) % 2))
+        z = Float64(2 * nside - irn) * 2.0 / (3.0 * Float64(nside))
+        phi = (Float64(iphi) - fodd) * pi / (2.0 * Float64(nside))
+    else
+        # South polar cap
+        ip1 = npix - ip
+        hip = Float64(ip1) / 2.0
+        fihip = floor(hip)
+        irs = Int64(floor(sqrt(hip - sqrt(fihip)))) + 1
+        iphi = 4 * irs + 1 - (ip1 - 2 * irs * (irs - 1))
+        z = -1.0 + Float64(irs * irs) / (3.0 * Float64(nside) * Float64(nside))
+        phi = (Float64(iphi) - 0.5) * pi / (2.0 * Float64(irs))
+    end
+
+    ra = phi * (180.0 / pi)
+    while ra < 0.0
+        ra += 360.0
+    end
+    while ra >= 360.0
+        ra -= 360.0
+    end
+
+    return ra, asin(z) * (180.0 / pi)
+end
+
+"""
+    healpix_nested_index_to_coords(level, nested_index)
+
+Inverse of [`healpix_nested_index`](@ref): converts a HEALPix pixel index at
+the given resolution `level` back into `(ra_or_lon_deg, dec_or_lat_deg)` --
+specifically the center of that pixel, not necessarily the original point
+that was fed into `healpix_nested_index` to land in it. [`healpix_nested_index`](@ref)
+produces NESTED indices, so most callers want this function;
+[`healpix_ring_index_to_coords`](@ref) is provided instead for
+interoperability with RING-scheme indices from other HEALPix
+tools/libraries. Returns `nothing` if `nested_index` is out of range for the
+given level.
+"""
+function healpix_nested_index_to_coords(level::Int, nested_index::UInt64)::Union{Nothing, Tuple{Float64, Float64}}
+    nside = Int64(1) << level
+    ring_index = healpix_nested_to_ring(nside, Int64(nested_index))
+    if ring_index < 0
+        return nothing
+    end
+    return healpix_ring_index_to_coords(level, UInt64(ring_index))
 end
 
 next_disc(disc::Int) = (disc % 4) + 1

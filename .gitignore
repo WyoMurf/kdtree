@@ -21,6 +21,7 @@ C/earth_viewer
 C/geonames2kd
 C/build_city_metatree
 C/healpix_calc
+C/healpix_to_coords
 # Generated city-viewer data artifacts (built by geonames2kd/build_city_metatree
 # from a GeoNames download -- see README-cities.md)
 citydata/

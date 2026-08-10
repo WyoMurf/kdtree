@@ -119,67 +119,165 @@ uint64_t healpix_nested_index(double ra_or_lon_deg, double dec_or_lat_deg, int l
 
     double phi = lon * TO_RAD;
     double z = sin(dec_or_lat_deg * TO_RAD);
+    double za = fabs(z);
 
-    uint64_t nside = 1ULL << level;
-    uint64_t face_pixels = nside * nside;
+    /* tt is phi scaled so a full turn spans [0, 4) -- one unit per base-face
+     * column, matching the jrll/jpll face layout used by the inverse
+     * (healpix_nested_to_ring) below. */
+    double tt = fmod(phi, 2.0 * M_PI);
+    if (tt < 0.0) tt += 2.0 * M_PI;
+    tt *= 2.0 / M_PI;
 
-    double xc, yc;
-    if (fabs(z) <= 2.0 / 3.0) {
-        xc = phi;
-        yc = 1.5 * z;
+    int64_t nside = 1LL << level;
+    int64_t face_num;
+    uint32_t ix, iy;
+
+    if (za <= 2.0 / 3.0) {
+        /* Equatorial belt. */
+        double temp1 = nside * (0.5 + tt);
+        double temp2 = nside * (z * 0.75);
+        int64_t jp = (int64_t)floor(temp1 - temp2); /* ascending edge line index */
+        int64_t jm = (int64_t)floor(temp1 + temp2); /* descending edge line index */
+        int64_t ifp = jp / nside;
+        int64_t ifm = jm / nside;
+        face_num = (ifp == ifm) ? (ifp | 4) : ((ifp < ifm) ? ifp : (ifm + 8));
+        ix = (uint32_t)(jm & (nside - 1));
+        iy = (uint32_t)(nside - (jp & (nside - 1)) - 1);
     } else {
         /* Polar caps. */
-        double sgn = (z >= 0.0) ? 1.0 : -1.0;
-        double sigma = sqrt(3.0 * (1.0 - fabs(z)));
-        yc = sgn * (2.0 - sigma);
+        int ntt = (int)tt;
+        if (ntt >= 4) ntt = 3;
+        double tp = tt - ntt;
+        double tmp = nside * sqrt(3.0 * (1.0 - za));
 
-        /* Find which of the 4 polar facets we are in. */
-        int facet = (int)(phi / (M_PI / 2.0));
-        if (facet < 0) facet = 0;
-        if (facet > 3) facet = 3;
-        double phi_c = (facet + 0.5) * (M_PI / 2.0);
-        xc = phi_c + (phi - phi_c) * sigma;
-    }
+        int64_t jp = (int64_t)(tp * tmp);       /* increasing edge line index */
+        int64_t jm = (int64_t)((1.0 - tp) * tmp); /* decreasing edge line index */
+        if (jp >= nside) jp = nside - 1;
+        if (jm >= nside) jm = nside - 1;
 
-    /* Project to oblique grid coordinates (scaled by pi/2). */
-    double pa = xc / (M_PI / 2.0);
-    double pb = yc / (M_PI / 2.0);
-
-    double u = pa + pb / 2.0;
-    double v = pa - pb / 2.0;
-
-    double ku = floor(u);
-    double kv = floor(v);
-    double u_frac = u - ku;
-    double v_frac = v - kv;
-
-    /* Translate (ku, kv) oblique grid coordinate to base face ID (0..11). */
-    int face = 0;
-    int ku_i = (int)ku;
-    int kv_i = (int)kv;
-
-    if (ku_i >= 0 && kv_i >= 0) {
-        if (ku_i < 4 && kv_i < 4) {
-            face = (4 - kv_i + ku_i % 4) % 4 + 4; /* Equatorial */
+        if (z >= 0.0) {
+            face_num = ntt;
+            ix = (uint32_t)(nside - jm - 1);
+            iy = (uint32_t)(nside - jp - 1);
         } else {
-            face = ku_i % 4; /* North cap */
+            face_num = ntt + 8;
+            ix = (uint32_t)jp;
+            iy = (uint32_t)jm;
         }
-    } else if (ku_i < 0 && kv_i < 0) {
-        int ku_mod = ku_i % 4;
-        if (ku_mod < 0) ku_mod += 4;
-        face = 8 + ku_mod; /* South cap */
     }
 
-    /* Grid coordinates inside the face. */
-    uint32_t i = (uint32_t)(u_frac * nside);
-    uint32_t j = (uint32_t)(v_frac * nside);
-    if (i >= nside) i = nside - 1;
-    if (j >= nside) j = nside - 1;
+    uint64_t face_pixels = (uint64_t)nside * (uint64_t)nside;
+    uint64_t morton = interleave_bits(ix, iy);
 
-    /* Interleave bits for NESTED scheme. */
-    uint64_t morton = interleave_bits(i, j);
+    return (uint64_t)face_num * face_pixels + morton;
+}
 
-    return face * face_pixels + morton;
+/*
+ * De-interleaves a 64-bit Morton code back into its original two 32-bit x/y
+ * components -- the inverse of interleave_bits(), used when converting a
+ * HEALPix NESTED pixel index back to a face's local (i, j) grid coordinates.
+ */
+static void deinterleave_bits(uint64_t ip, uint32_t *ix, uint32_t *iy) {
+    uint64_t x = 0, y = 0;
+    for (int i = 0; i < 32; i++) {
+        x |= ((ip >> (2 * i)) & 1) << i;
+        y |= ((ip >> (2 * i + 1)) & 1) << i;
+    }
+    *ix = (uint32_t)x;
+    *iy = (uint32_t)y;
+}
+
+/*
+ * Converts a HEALPix NESTED index to the equivalent 0-based RING-scheme
+ * index, for the given nside. Returns -1 if nested_index is out of range
+ * (>= 12*nside^2).
+ */
+static int64_t healpix_nested_to_ring(int64_t nside, int64_t nested_index) {
+    int64_t npix = 12 * nside * nside;
+    if (nested_index < 0 || nested_index >= npix) return -1;
+
+    int64_t nside2 = nside * nside;
+    int64_t face_num = nested_index / nside2;
+    uint64_t ipf = (uint64_t)(nested_index % nside2);
+
+    uint32_t ix, iy;
+    deinterleave_bits(ipf, &ix, &iy);
+
+    static const int jrll[] = { 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4 };
+    static const int jpll[] = { 1, 3, 5, 7, 0, 2, 4, 6, 1, 3, 5, 7 };
+
+    int64_t jr = (int64_t)jrll[face_num] * nside - (int64_t)ix - (int64_t)iy - 1;
+
+    int64_t nr, n_before, kshift;
+    if (jr < nside) { /* North polar cap */
+        nr = jr;
+        n_before = 2 * nr * (nr - 1);
+        kshift = 0;
+    } else if (jr > 3 * nside) { /* South polar cap */
+        nr = 4 * nside - jr;
+        n_before = npix - 2 * (nr + 1) * nr;
+        kshift = 0;
+    } else { /* Equatorial belt */
+        nr = nside;
+        n_before = 2 * nside * (nside - 1) + (jr - nside) * 4 * nside;
+        kshift = (jr - nside) & 1;
+    }
+
+    int64_t jp = ((int64_t)jpll[face_num] * nr + (int64_t)ix - (int64_t)iy + 1 + kshift) / 2;
+    if (jp > 4 * nr) jp -= 4 * nr;
+    if (jp < 1) jp += 4 * nr;
+
+    return n_before + jp - 1;
+}
+
+int healpix_ring_index_to_coords(int level, uint64_t ring_index, double *ra_or_lon_deg, double *dec_or_lat_deg) {
+    int64_t nside = 1LL << level;
+    int64_t npix = 12 * nside * nside;
+    int64_t p_ring = (int64_t)ring_index;
+    if (p_ring < 0 || p_ring >= npix) return -1;
+
+    int64_t ncap = 2 * nside * (nside - 1);
+    double z, phi;
+    int64_t ip = p_ring; /* 0-indexed, matches the canonical pix2ang_ring pseudocode's "ip" */
+
+    if (ip < ncap) { /* North polar cap */
+        double hip = (double)(ip + 1) / 2.0;
+        double fihip = floor(hip);
+        int64_t irn = (int64_t)(floor(sqrt(hip - sqrt(fihip)))) + 1;
+        int64_t iphi = (ip + 1) - 2 * irn * (irn - 1);
+        z = 1.0 - (double)(irn * irn) / (3.0 * (double)nside * (double)nside);
+        phi = ((double)iphi - 0.5) * M_PI / (2.0 * (double)irn);
+    } else if (ip < npix - ncap) { /* Equatorial belt */
+        int64_t ip1 = ip - ncap;
+        int64_t irn = ip1 / (4 * nside) + nside;
+        int64_t iphi = ip1 % (4 * nside) + 1;
+        double fodd = 0.5 * (double)(1 + (int)((irn + nside) % 2));
+        z = (double)(2 * nside - irn) * 2.0 / (3.0 * (double)nside);
+        phi = ((double)iphi - fodd) * M_PI / (2.0 * (double)nside);
+    } else { /* South polar cap */
+        int64_t ip1 = npix - ip;
+        double hip = (double)ip1 / 2.0;
+        double fihip = floor(hip);
+        int64_t irs = (int64_t)(floor(sqrt(hip - sqrt(fihip)))) + 1;
+        int64_t iphi = 4 * irs + 1 - (ip1 - 2 * irs * (irs - 1));
+        z = -1.0 + (double)(irs * irs) / (3.0 * (double)nside * (double)nside);
+        phi = ((double)iphi - 0.5) * M_PI / (2.0 * (double)irs);
+    }
+
+    double ra = phi * (180.0 / M_PI);
+    while (ra < 0.0) ra += 360.0;
+    while (ra >= 360.0) ra -= 360.0;
+
+    *ra_or_lon_deg = ra;
+    *dec_or_lat_deg = asin(z) * (180.0 / M_PI);
+    return 0;
+}
+
+int healpix_nested_index_to_coords(int level, uint64_t nested_index, double *ra_or_lon_deg, double *dec_or_lat_deg) {
+    int64_t nside = 1LL << level;
+    int64_t ring_index = healpix_nested_to_ring(nside, (int64_t)nested_index);
+    if (ring_index < 0) return -1;
+    return healpix_ring_index_to_coords(level, (uint64_t)ring_index, ra_or_lon_deg, dec_or_lat_deg);
 }
 
 double dms32_to_degrees(int sign, int32_t deg, int32_t min, double sec) {

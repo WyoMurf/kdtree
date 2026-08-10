@@ -236,17 +236,60 @@ end
         @test isfinite(d)
     end
 
-    # Expected values cross-checked against C/healpix_calc.c (via the shared
-    # geo_utils.c implementation it now wraps), which this port mirrors exactly.
-    @testset "HEALPix nested index matches C reference" begin
-        @test healpix_nested_index(217.4290, -62.6795, 12) == 134053741  # polar cap
-        @test healpix_nested_index(-109.05653, 44.52634, 3) == 330       # polar cap, negative lon
-        @test healpix_nested_index(45.0, 10.0, 3) == 282                 # equatorial belt
-        @test healpix_nested_index(0.0, 0.0, 3) == 256                   # equatorial belt, origin
-        @test healpix_nested_index(200.0, -20.0, 5) == 4257              # equatorial belt, higher level
+    # Expected values cross-checked against astropy-healpix (via the shared
+    # geo_utils.c implementation this port mirrors exactly).
+    @testset "HEALPix nested index matches astropy-healpix reference" begin
+        @test healpix_nested_index(217.4290, -62.6795, 12) == 170359233  # equatorial belt, high level
+        @test healpix_nested_index(-109.05653, 44.52634, 3) == 156       # north cap, negative lon
+        @test healpix_nested_index(45.0, 10.0, 3) == 3                   # north cap
+        @test healpix_nested_index(0.001, 0.0, 3) == 282                 # equatorial belt, near origin
+        @test healpix_nested_index(200.0, -20.0, 5) == 6228              # equatorial belt, higher level
     end
 
     @testset "HEALPix nested index longitude normalization" begin
         @test healpix_nested_index(-109.05653, 44.52634, 3) == healpix_nested_index(250.94347, 44.52634, 3)
+    end
+
+    # Expected values cross-checked against astropy-healpix.
+    @testset "HEALPix nested/ring index to coords matches astropy-healpix reference" begin
+        lon, lat = healpix_nested_index_to_coords(12, UInt64(134053741))
+        @test isapprox(lon, 274.273681640625000; atol=1e-9)
+        @test isapprox(lat, 37.005237186492252; atol=1e-9)
+
+        lon, lat = healpix_nested_index_to_coords(3, UInt64(330))
+        @test isapprox(lon, 73.125000000000000; atol=1e-9)
+        @test isapprox(lat, -19.471220634490692; atol=1e-9)
+
+        lon, lat = healpix_nested_index_to_coords(3, UInt64(282))
+        @test isapprox(lon, 5.625000000000000; atol=1e-9)
+        @test isapprox(lat, 0.000000000000000; atol=1e-9)
+
+        lon, lat = healpix_nested_index_to_coords(3, UInt64(256))
+        @test isapprox(lon, 0.000000000000000; atol=1e-9)
+        @test isapprox(lat, -35.685334712652057; atol=1e-9)
+
+        lon, lat = healpix_nested_index_to_coords(3, UInt64(0))
+        @test isapprox(lon, 45.000000000000000; atol=1e-9)
+        @test isapprox(lat, 4.780191847199159; atol=1e-9)
+
+        lon, lat = healpix_nested_index_to_coords(3, UInt64(767))
+        @test isapprox(lon, 315.000000000000000; atol=1e-9)
+        @test isapprox(lat, -4.780191847199159; atol=1e-9)
+
+        lon, lat = healpix_ring_index_to_coords(3, UInt64(100))
+        @test isapprox(lon, 212.142857142857139; atol=1e-9)
+        @test isapprox(lat, 48.141207794360284; atol=1e-9)
+
+        # 768 = 12*8^2 = npix at level 3, i.e. exactly out of range.
+        @test healpix_nested_index_to_coords(3, UInt64(768)) === nothing
+        @test healpix_ring_index_to_coords(3, UInt64(768)) === nothing
+    end
+
+    @testset "HEALPix forward/inverse round-trip" begin
+        idx = healpix_nested_index(-109.05653, 44.52634, 3)
+        @test idx == 156
+
+        lon, lat = healpix_nested_index_to_coords(3, idx)
+        @test healpix_nested_index(lon, lat, 3) == idx
     end
 end

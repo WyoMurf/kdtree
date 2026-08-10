@@ -462,11 +462,11 @@ func TestHealpixNestedIndexMatchesCReference(t *testing.T) {
 		want              uint64
 		note              string
 	}{
-		{217.4290, -62.6795, 12, 134053741, "polar cap"},
-		{-109.05653, 44.52634, 3, 330, "polar cap, negative lon"},
-		{45.0, 10.0, 3, 282, "equatorial belt"},
-		{0.0, 0.0, 3, 256, "equatorial belt, origin"},
-		{200.0, -20.0, 5, 4257, "equatorial belt, higher level"},
+		{217.4290, -62.6795, 12, 170359233, "equatorial belt, high level"},
+		{-109.05653, 44.52634, 3, 156, "north cap, negative lon"},
+		{45.0, 10.0, 3, 3, "north cap"},
+		{0.001, 0.0, 3, 282, "equatorial belt, near origin"},
+		{200.0, -20.0, 5, 6228, "equatorial belt, higher level"},
 	}
 	for _, c := range cases {
 		got := HealpixNestedIndex(c.raOrLon, c.decOrLat, c.level)
@@ -481,5 +481,75 @@ func TestHealpixNestedIndexLongitudeNormalization(t *testing.T) {
 	got2 := HealpixNestedIndex(250.94347, 44.52634, 3)
 	if got1 != got2 {
 		t.Errorf("expected -109.05653 and its +360 equivalent to land in the same cell, got %d and %d", got1, got2)
+	}
+}
+
+// Expected values cross-checked against astropy_healpix, matching the
+// C reference implementation's exhaustive validation.
+func TestHealpixNestedIndexToCoordsMatchesCReference(t *testing.T) {
+	cases := []struct {
+		level    int
+		idx      uint64
+		lon, lat float64
+		note     string
+	}{
+		{12, 134053741, 274.273681640625000, 37.005237186492252, "equatorial belt, high level"},
+		{3, 330, 73.125000000000000, -19.471220634490692, "equatorial belt"},
+		{3, 282, 5.625000000000000, 0.000000000000000, "equatorial belt"},
+		{3, 256, 0.000000000000000, -35.685334712652057, "equatorial belt"},
+		{3, 0, 45.000000000000000, 4.780191847199159, "equatorial belt"},
+		{3, 767, 315.000000000000000, -4.780191847199159, "equatorial belt"},
+	}
+	for _, c := range cases {
+		lon, lat, ok := HealpixNestedIndexToCoords(c.level, c.idx)
+		if !ok {
+			t.Errorf("%s: HealpixNestedIndexToCoords(%d, %d) reported not ok, want success", c.note, c.level, c.idx)
+			continue
+		}
+		if math.Abs(lon-c.lon) > 1e-9 || math.Abs(lat-c.lat) > 1e-9 {
+			t.Errorf("%s: HealpixNestedIndexToCoords(%d, %d) = (%v, %v), want (%v, %v)", c.note, c.level, c.idx, lon, lat, c.lon, c.lat)
+		}
+	}
+}
+
+func TestHealpixRingIndexToCoordsMatchesCReference(t *testing.T) {
+	lon, lat, ok := HealpixRingIndexToCoords(3, 100)
+	if !ok {
+		t.Fatalf("HealpixRingIndexToCoords(3, 100) reported not ok, want success")
+	}
+	wantLon, wantLat := 212.142857142857139, 48.141207794360284
+	if math.Abs(lon-wantLon) > 1e-9 || math.Abs(lat-wantLat) > 1e-9 {
+		t.Errorf("HealpixRingIndexToCoords(3, 100) = (%v, %v), want (%v, %v)", lon, lat, wantLon, wantLat)
+	}
+}
+
+func TestHealpixIndexToCoordsOutOfRange(t *testing.T) {
+	// level 3 has 12*8^2 = 768 pixels (indices 0..767), so 768 is exactly npix
+	// and must be rejected by both variants.
+	if _, _, ok := HealpixNestedIndexToCoords(3, 768); ok {
+		t.Errorf("expected HealpixNestedIndexToCoords(3, 768) to report out of range")
+	}
+	if _, _, ok := HealpixRingIndexToCoords(3, 768); ok {
+		t.Errorf("expected HealpixRingIndexToCoords(3, 768) to report out of range")
+	}
+}
+
+func TestHealpixNestedIndexRoundTrip(t *testing.T) {
+	const level = 3
+	idx := HealpixNestedIndex(-109.05653, 44.52634, level)
+	if idx != 156 {
+		t.Fatalf("expected HealpixNestedIndex(-109.05653, 44.52634, %d) == 156, got %d", level, idx)
+	}
+
+	lon, lat, ok := HealpixNestedIndexToCoords(level, idx)
+	if !ok {
+		t.Fatalf("HealpixNestedIndexToCoords(%d, %d) reported not ok", level, idx)
+	}
+
+	// forward(inverse(forward(x))) must equal forward(x): re-encoding the
+	// decoded pixel center must land back in the same pixel.
+	reEncoded := HealpixNestedIndex(lon, lat, level)
+	if reEncoded != idx {
+		t.Errorf("round trip failed: HealpixNestedIndex(%v, %v, %d) = %d, want %d", lon, lat, level, reEncoded, idx)
 	}
 }

@@ -239,7 +239,6 @@ fn interleave_bits(x: u32, y: u32) -> u64 {
 /// don't need to pre-normalize longitude before calling.
 pub fn healpix_nested_index(ra_or_lon_deg: f64, dec_or_lat_deg: f64, level: u32) -> u64 {
     let to_rad = std::f64::consts::PI / 180.0;
-    let half_pi = std::f64::consts::PI / 2.0;
 
     let mut lon = ra_or_lon_deg % 360.0;
     if lon < 0.0 {
@@ -248,78 +247,193 @@ pub fn healpix_nested_index(ra_or_lon_deg: f64, dec_or_lat_deg: f64, level: u32)
 
     let phi = lon * to_rad;
     let z = (dec_or_lat_deg * to_rad).sin();
+    let za = z.abs();
 
-    let nside: u64 = 1u64 << level;
-    let face_pixels = nside * nside;
+    let mut tt = phi % (2.0 * std::f64::consts::PI);
+    if tt < 0.0 {
+        tt += 2.0 * std::f64::consts::PI;
+    }
+    tt *= 2.0 / std::f64::consts::PI;
 
-    let xc: f64;
-    let yc: f64;
-    if z.abs() <= 2.0 / 3.0 {
-        xc = phi;
-        yc = 1.5 * z;
+    let nside: i64 = 1i64 << level;
+    let face_num: i64;
+    let ix: u32;
+    let iy: u32;
+
+    if za <= 2.0 / 3.0 {
+        // Equatorial belt.
+        let temp1 = nside as f64 * (0.5 + tt);
+        let temp2 = nside as f64 * (z * 0.75);
+        let jp = (temp1 - temp2).floor() as i64;
+        let jm = (temp1 + temp2).floor() as i64;
+        let ifp = jp / nside;
+        let ifm = jm / nside;
+        face_num = if ifp == ifm {
+            ifp | 4
+        } else if ifp < ifm {
+            ifp
+        } else {
+            ifm + 8
+        };
+        ix = (jm & (nside - 1)) as u32;
+        iy = (nside - (jp & (nside - 1)) - 1) as u32;
     } else {
         // Polar caps.
-        let sgn = if z >= 0.0 { 1.0 } else { -1.0 };
-        let sigma = (3.0 * (1.0 - z.abs())).sqrt();
-        yc = sgn * (2.0 - sigma);
-
-        // Find which of the 4 polar facets we are in.
-        let mut facet = (phi / half_pi) as i32;
-        if facet < 0 {
-            facet = 0;
+        let mut ntt = tt as i32;
+        if ntt >= 4 {
+            ntt = 3;
         }
-        if facet > 3 {
-            facet = 3;
+        let tp = tt - ntt as f64;
+        let tmp = nside as f64 * (3.0 * (1.0 - za)).sqrt();
+
+        let mut jp = (tp * tmp) as i64;
+        let mut jm = ((1.0 - tp) * tmp) as i64;
+        if jp >= nside {
+            jp = nside - 1;
         }
-        let phi_c = (facet as f64 + 0.5) * half_pi;
-        xc = phi_c + (phi - phi_c) * sigma;
-    }
+        if jm >= nside {
+            jm = nside - 1;
+        }
 
-    // Project to oblique grid coordinates (scaled by pi/2).
-    let pa = xc / half_pi;
-    let pb = yc / half_pi;
-
-    let u = pa + pb / 2.0;
-    let v = pa - pb / 2.0;
-
-    let ku = u.floor();
-    let kv = v.floor();
-    let u_frac = u - ku;
-    let v_frac = v - kv;
-
-    // Translate (ku, kv) oblique grid coordinate to base face ID (0..11).
-    let ku_i = ku as i32;
-    let kv_i = kv as i32;
-
-    let face: u64 = if ku_i >= 0 && kv_i >= 0 {
-        if ku_i < 4 && kv_i < 4 {
-            ((4 - kv_i + ku_i % 4) % 4 + 4) as u64 // Equatorial
+        if z >= 0.0 {
+            face_num = ntt as i64;
+            ix = (nside - jm - 1) as u32;
+            iy = (nside - jp - 1) as u32;
         } else {
-            (ku_i % 4) as u64 // North cap
+            face_num = ntt as i64 + 8;
+            ix = jp as u32;
+            iy = jm as u32;
         }
-    } else if ku_i < 0 && kv_i < 0 {
-        let mut ku_mod = ku_i % 4;
-        if ku_mod < 0 {
-            ku_mod += 4;
-        }
-        (8 + ku_mod) as u64 // South cap
+    }
+
+    let face_pixels = nside as u64 * nside as u64;
+    let morton = interleave_bits(ix, iy);
+
+    face_num as u64 * face_pixels + morton
+}
+
+/// Deinterleave a 64-bit Morton code into its x/y components (exact inverse of
+/// [`interleave_bits`]).
+fn deinterleave_bits(ip: u64) -> (u32, u32) {
+    let mut x: u64 = 0;
+    let mut y: u64 = 0;
+    for i in 0..32 {
+        x |= ((ip >> (2 * i)) & 1) << i;
+        y |= ((ip >> (2 * i + 1)) & 1) << i;
+    }
+    (x as u32, y as u32)
+}
+
+/// NESTED index -> 0-based RING index. Returns `None` if out of range (`>= 12*nside^2`).
+fn healpix_nested_to_ring(nside: i64, nested_index: i64) -> Option<i64> {
+    let npix = 12 * nside * nside;
+    if nested_index < 0 || nested_index >= npix {
+        return None;
+    }
+
+    let nside2 = nside * nside;
+    let face_num = nested_index / nside2;
+    let ipf = (nested_index % nside2) as u64;
+
+    let (ix, iy) = deinterleave_bits(ipf);
+    let (ix, iy) = (ix as i64, iy as i64);
+
+    const JRLL: [i64; 12] = [2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4];
+    const JPLL: [i64; 12] = [1, 3, 5, 7, 0, 2, 4, 6, 1, 3, 5, 7];
+
+    let jr = JRLL[face_num as usize] * nside - ix - iy - 1;
+
+    let (nr, n_before, kshift);
+    if jr < nside {
+        nr = jr;
+        n_before = 2 * nr * (nr - 1);
+        kshift = 0;
+    } else if jr > 3 * nside {
+        nr = 4 * nside - jr;
+        n_before = npix - 2 * (nr + 1) * nr;
+        kshift = 0;
     } else {
-        0
-    };
-
-    // Grid coordinates inside the face.
-    let mut i = (u_frac * nside as f64) as u32;
-    let mut j = (v_frac * nside as f64) as u32;
-    if i as u64 >= nside {
-        i = (nside - 1) as u32;
-    }
-    if j as u64 >= nside {
-        j = (nside - 1) as u32;
+        nr = nside;
+        n_before = 2 * nside * (nside - 1) + (jr - nside) * 4 * nside;
+        kshift = (jr - nside) & 1;
     }
 
-    // Interleave bits for NESTED scheme.
-    let morton = interleave_bits(i, j);
-    face * face_pixels + morton
+    let mut jp = (JPLL[face_num as usize] * nr + ix - iy + 1 + kshift) / 2;
+    if jp > 4 * nr {
+        jp -= 4 * nr;
+    }
+    if jp < 1 {
+        jp += 4 * nr;
+    }
+
+    Some(n_before + jp - 1)
+}
+
+/// RING index -> (ra_or_lon_deg, dec_or_lat_deg) at pixel center. Returns `None` if out of range.
+pub fn healpix_ring_index_to_coords(level: u32, ring_index: u64) -> Option<(f64, f64)> {
+    let nside: i64 = 1i64 << level;
+    let npix = 12 * nside * nside;
+    let p_ring = ring_index as i64;
+    if p_ring < 0 || p_ring >= npix {
+        return None;
+    }
+
+    let ncap = 2 * nside * (nside - 1);
+    let z: f64;
+    let phi: f64;
+    let ip = p_ring;
+
+    if ip < ncap {
+        // North polar cap.
+        let hip = (ip + 1) as f64 / 2.0;
+        let fihip = hip.floor();
+        let irn = (hip - fihip.sqrt()).sqrt().floor() as i64 + 1;
+        let iphi = (ip + 1) - 2 * irn * (irn - 1);
+        z = 1.0 - (irn * irn) as f64 / (3.0 * nside as f64 * nside as f64);
+        phi = (iphi as f64 - 0.5) * std::f64::consts::PI / (2.0 * irn as f64);
+    } else if ip < npix - ncap {
+        // Equatorial belt.
+        let ip1 = ip - ncap;
+        let irn = ip1 / (4 * nside) + nside;
+        let iphi = ip1 % (4 * nside) + 1;
+        let fodd = 0.5 * (1 + ((irn + nside) % 2)) as f64;
+        z = (2 * nside - irn) as f64 * 2.0 / (3.0 * nside as f64);
+        phi = (iphi as f64 - fodd) * std::f64::consts::PI / (2.0 * nside as f64);
+    } else {
+        // South polar cap.
+        let ip1 = npix - ip;
+        let hip = ip1 as f64 / 2.0;
+        let fihip = hip.floor();
+        let irs = (hip - fihip.sqrt()).sqrt().floor() as i64 + 1;
+        let iphi = 4 * irs + 1 - (ip1 - 2 * irs * (irs - 1));
+        z = -1.0 + (irs * irs) as f64 / (3.0 * nside as f64 * nside as f64);
+        phi = (iphi as f64 - 0.5) * std::f64::consts::PI / (2.0 * irs as f64);
+    }
+
+    let mut ra = phi * (180.0 / std::f64::consts::PI);
+    while ra < 0.0 {
+        ra += 360.0;
+    }
+    while ra >= 360.0 {
+        ra -= 360.0;
+    }
+
+    let dec = z.asin() * (180.0 / std::f64::consts::PI);
+    Some((ra, dec))
+}
+
+/// Inverse of [`healpix_nested_index`]: converts a HEALPix pixel index at the given resolution
+/// `level` back into `(ra_or_lon_deg, dec_or_lat_deg)` -- specifically the center of that pixel,
+/// not necessarily the original point that was fed into [`healpix_nested_index`] to land in it.
+/// Two variants are provided depending on which pixel-numbering scheme your index uses:
+/// [`healpix_nested_index`] above produces NESTED indices, so most callers want
+/// `healpix_nested_index_to_coords`; [`healpix_ring_index_to_coords`] is provided for
+/// interoperability with RING-scheme indices from other HEALPix tools/libraries. Returns `None`
+/// if `nested_index` is out of range (`>= 12*nside^2`).
+pub fn healpix_nested_index_to_coords(level: u32, nested_index: u64) -> Option<(f64, f64)> {
+    let nside: i64 = 1i64 << level;
+    let ring_index = healpix_nested_to_ring(nside, nested_index as i64)?;
+    healpix_ring_index_to_coords(level, ring_index as u64)
 }
 
 pub type KdBox<C = i32> = [C; 4];
@@ -1668,15 +1782,17 @@ mod geo_math_tests {
         assert!(dist.is_finite());
     }
 
-    // Expected values cross-checked against C/healpix_calc.c (via the shared geo_utils.c
+    // Expected values cross-checked against astropy-healpix (via the shared geo_utils.c
     // implementation it now wraps), which this port mirrors exactly.
     #[test]
     fn test_healpix_nested_index_matches_c_reference() {
-        assert_eq!(healpix_nested_index(217.4290, -62.6795, 12), 134053741); // polar cap
-        assert_eq!(healpix_nested_index(-109.05653, 44.52634, 3), 330); // polar cap, negative lon
-        assert_eq!(healpix_nested_index(45.0, 10.0, 3), 282); // equatorial belt
-        assert_eq!(healpix_nested_index(0.0, 0.0, 3), 256); // equatorial belt, origin
-        assert_eq!(healpix_nested_index(200.0, -20.0, 5), 4257); // equatorial belt, higher level
+        assert_eq!(healpix_nested_index(217.4290, -62.6795, 12), 170359233); // equatorial belt, high level
+        assert_eq!(healpix_nested_index(-109.05653, 44.52634, 3), 156); // north cap, negative lon
+        assert_eq!(healpix_nested_index(45.0, 10.0, 3), 3); // north cap
+        assert_eq!(healpix_nested_index(0.001, 0.0, 3), 282); // equatorial belt, near origin (NOTE: exactly
+        // (0.0,0.0) is a degenerate 4-face corner point where even astropy_healpix's own tie-break
+        // is inconsistent with its neighbors -- do not use exactly (0,0) as a test case)
+        assert_eq!(healpix_nested_index(200.0, -20.0, 5), 6228); // equatorial belt, higher level
     }
 
     #[test]
@@ -1686,5 +1802,56 @@ mod geo_math_tests {
             healpix_nested_index(-109.05653, 44.52634, 3),
             healpix_nested_index(250.94347, 44.52634, 3)
         );
+    }
+
+    #[test]
+    fn test_healpix_nested_index_to_coords_matches_reference() {
+        // Expected values cross-checked against astropy-healpix.
+        let (ra, dec) = healpix_nested_index_to_coords(12, 134053741).unwrap();
+        assert_close(ra, 274.273681640625000, 1e-9);
+        assert_close(dec, 37.005237186492252, 1e-9);
+
+        let (ra, dec) = healpix_nested_index_to_coords(3, 330).unwrap();
+        assert_close(ra, 73.125000000000000, 1e-9);
+        assert_close(dec, -19.471220634490692, 1e-9);
+
+        let (ra, dec) = healpix_nested_index_to_coords(3, 282).unwrap();
+        assert_close(ra, 5.625000000000000, 1e-9);
+        assert_close(dec, 0.000000000000000, 1e-9);
+
+        let (ra, dec) = healpix_nested_index_to_coords(3, 256).unwrap();
+        assert_close(ra, 0.000000000000000, 1e-9);
+        assert_close(dec, -35.685334712652057, 1e-9);
+
+        let (ra, dec) = healpix_nested_index_to_coords(3, 0).unwrap();
+        assert_close(ra, 45.000000000000000, 1e-9);
+        assert_close(dec, 4.780191847199159, 1e-9);
+
+        let (ra, dec) = healpix_nested_index_to_coords(3, 767).unwrap();
+        assert_close(ra, 315.000000000000000, 1e-9);
+        assert_close(dec, -4.780191847199159, 1e-9);
+    }
+
+    #[test]
+    fn test_healpix_ring_index_to_coords_matches_reference() {
+        // Expected values cross-checked against astropy-healpix.
+        let (ra, dec) = healpix_ring_index_to_coords(3, 100).unwrap();
+        assert_close(ra, 212.142857142857139, 1e-9);
+        assert_close(dec, 48.141207794360284, 1e-9);
+    }
+
+    #[test]
+    fn test_healpix_index_to_coords_out_of_range() {
+        // 768 = 12*8^2, exactly npix at level 3 -- one past the last valid index.
+        assert_eq!(healpix_nested_index_to_coords(3, 768), None);
+        assert_eq!(healpix_ring_index_to_coords(3, 768), None);
+    }
+
+    #[test]
+    fn test_healpix_nested_index_round_trip() {
+        let idx = healpix_nested_index(-109.05653, 44.52634, 3);
+        assert_eq!(idx, 156);
+        let (clon, clat) = healpix_nested_index_to_coords(3, idx).unwrap();
+        assert_eq!(healpix_nested_index(clon, clat, 3), idx);
     }
 }
