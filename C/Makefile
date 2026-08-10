@@ -15,8 +15,17 @@ RAYLIB_DIR = /home/murf/external-sources/raylib/src
 # wherever raylib is actually available.
 all: libkdtree.so libkdtree.a fits2kd csv2fits kd2lod build_metatree
 
+# -O3 matters a lot more here than it looks: at -O0, raymath.h's Vector3*
+# helpers (Vector3Add/Scale/Normalize/...) don't get inlined despite being
+# declared `static inline`, so every one of the many per-point vector ops
+# in the render loop pays real call overhead. Confirmed on earth_viewer.c
+# (identical code, just missing this flag until this fix): adding -O3 cut
+# per-frame CPU time by roughly 3.5x on its own, more than any of the
+# algorithmic changes made in the same investigation. viewer.c wasn't
+# separately profiled, but the exact same missing-inlining mechanism
+# applies to any of its own raymath-heavy per-point work.
 viewer: viewer.c include/kdtree.h include/kd2lod.h
-	$(CC) $(CFLAGS) -std=gnu11 viewer.c -o $@ -Iinclude -I$(RAYLIB_DIR) -L$(RAYLIB_DIR) -Wl,-rpath,$(RAYLIB_DIR) -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
+	$(CC) $(CFLAGS) -std=gnu11 -O3 viewer.c -o $@ -Iinclude -I$(RAYLIB_DIR) -L$(RAYLIB_DIR) -Wl,-rpath,$(RAYLIB_DIR) -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
 
 # earth_viewer is excluded from `all` for the same reason as viewer above: it
 # links against a locally-built raylib CI has no reason to install.
@@ -34,7 +43,7 @@ earth_viewer: earth_viewer.c include/kdtree.h
 		echo "      sphere. Set SUPPORT_FILEFORMAT_JPG to 1 there and rebuild raylib"; \
 		echo "      to fix, or supply a PNG texture instead (enabled by default)."; \
 	fi
-	$(CC) $(CFLAGS) -std=gnu11 earth_viewer.c -o $@ -Iinclude -I$(RAYLIB_DIR) -L$(RAYLIB_DIR) -Wl,-rpath,$(RAYLIB_DIR) -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
+	$(CC) $(CFLAGS) -std=gnu11 -O3 earth_viewer.c -o $@ -Iinclude -I$(RAYLIB_DIR) -L$(RAYLIB_DIR) -Wl,-rpath,$(RAYLIB_DIR) -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
 
 fits2kd: fits2kd.c libkdtree.a
 	$(CC) $(CFLAGS) -std=gnu11 -O3 fits2kd.c libkdtree.a -o $@ -Iinclude -lcfitsio -lm

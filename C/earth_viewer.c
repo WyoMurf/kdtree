@@ -202,12 +202,46 @@ static Mesh *BuildEarthMeshes(float radiusKm, int rings, int slices, int *outCou
  * cos(angle) >= R / distance(camera, center). This is what actually delivers
  * "any view of Earth only shows half or less of the grid" -- frustum culling
  * alone doesn't know the sphere is opaque. */
-static int IsAboveHorizon(Vector3 pointOnSphere, Vector3 camPos) {
+/* IsAboveHorizon's original form recomputed Vector3Length(camPos) and
+ * Vector3Normalize(camPos) on every single call even though camPos is the
+ * same for every point tested in a given frame, and Vector3Normalize(
+ * pointOnSphere) even though every pointOnSphere this is ever called with
+ * comes from LonLatToCartesian(..., EARTH_RADIUS_KM) and so already has
+ * magnitude EARTH_RADIUS_KM exactly -- normalizing it is really just a
+ * scale by a compile-time-known constant, not a sqrt. At ~170k points
+ * scanned per frame this was 2 wasted sqrtf() calls per point (one for
+ * camPos, repeated ~170k times for a value that never changes; one for
+ * pointOnSphere, avoidable entirely) -- a real, measured contributor to
+ * this viewer's per-point CPU cost (see the DrawCityPoint-batching commit's
+ * message for the fuller profiling picture). ComputeHorizonTest hoists the
+ * camera-only part out to once per frame; IsAboveHorizonFast drops the
+ * pointOnSphere normalize entirely. */
+typedef struct {
+    Vector3 camDir;     /* normalize(camPos), meaningless if allInside */
+    float cosThreshold; /* EARTH_RADIUS_KM / |camPos| */
+    int allInside;      /* camera at/under the surface: every point counts as visible */
+} HorizonTest;
+
+static HorizonTest ComputeHorizonTest(Vector3 camPos) {
+    HorizonTest ht;
     float d = Vector3Length(camPos);
-    if (d <= EARTH_RADIUS_KM) return 1; /* camera at/under the surface: don't occlude (shouldn't happen in practice) */
-    float cosThreshold = EARTH_RADIUS_KM / d;
-    float cosAngle = Vector3DotProduct(Vector3Normalize(pointOnSphere), Vector3Normalize(camPos));
-    return cosAngle >= cosThreshold;
+    if (d <= EARTH_RADIUS_KM) {
+        ht.camDir = (Vector3){ 0.0f, 0.0f, 0.0f };
+        ht.cosThreshold = 0.0f;
+        ht.allInside = 1; /* shouldn't happen in practice */
+    } else {
+        ht.camDir = Vector3Scale(camPos, 1.0f / d);
+        ht.cosThreshold = EARTH_RADIUS_KM / d;
+        ht.allInside = 0;
+    }
+    return ht;
+}
+
+static int IsAboveHorizonFast(Vector3 pointOnSphere, const HorizonTest *ht) {
+    if (ht->allInside) return 1;
+    Vector3 pointDir = Vector3Scale(pointOnSphere, 1.0f / EARTH_RADIUS_KM);
+    float cosAngle = Vector3DotProduct(pointDir, ht->camDir);
+    return cosAngle >= ht->cosThreshold;
 }
 
 typedef struct { float a, b, c, d; } Plane;
@@ -259,7 +293,7 @@ static int AABBOutsideFrustum(const Plane fr[6], Vector3 bmin, Vector3 bmax) {
  * rendering-correctness issue. Known accepted limitation: a handful of
  * cells straddle the +/-180 antimeridian, giving them a "loose" (not
  * incorrect) box -- see the ingestion plan notes. */
-static int CellVisible(double lonMin, double latMin, double lonMax, double latMax, const Plane fr[6], Vector3 camPos) {
+static int CellVisible(double lonMin, double latMin, double lonMax, double latMax, const Plane fr[6], const HorizonTest *ht) {
     Vector3 bmin = { 1e9f, 1e9f, 1e9f }, bmax = { -1e9f, -1e9f, -1e9f };
     int anyAboveHorizon = 0;
     const int STEPS = 6;
@@ -274,7 +308,7 @@ static int CellVisible(double lonMin, double latMin, double lonMax, double latMa
             if (p.y > bmax.y) bmax.y = p.y;
             if (p.z < bmin.z) bmin.z = p.z;
             if (p.z > bmax.z) bmax.z = p.z;
-            if (IsAboveHorizon(p, camPos)) anyAboveHorizon = 1;
+            if (IsAboveHorizonFast(p, ht)) anyAboveHorizon = 1;
         }
     }
     if (!anyAboveHorizon) return 0;
@@ -282,22 +316,47 @@ static int CellVisible(double lonMin, double latMin, double lonMax, double latMa
 }
 
 /* --- Name/population lookup: cities.names is small enough (~170k rows, a
- * few MB) to load entirely into memory, unlike the tile/meta-tree files. --- */
-typedef struct NameEntry {
+ * few MB) to load entirely into memory, unlike the tile/meta-tree files.
+ *
+ * This used to be a textbook hash table with separately-malloc'd chain
+ * nodes (one malloc(sizeof(NameEntry)) per city, 170,603 individually
+ * heap-allocated, scattered nodes linked via ->next). That's a real,
+ * measured cost: LookupName is called for every point that passes the
+ * horizon+frustum test (~88k times/frame at a typical view), and every one
+ * of those calls chased a pointer to a effectively-random heap address --
+ * profiling with clock_gettime() around WalkMetaTree showed LookupName
+ * alone accounted for roughly a third of the ~34ms/frame this viewer was
+ * spending on per-point CPU work (confirmed by temporarily short-circuiting
+ * it to NULL and watching frame time drop by ~11ms), consistent with
+ * near-guaranteed cache misses on every lookup.
+ *
+ * Fix: store every NameEntry in ONE contiguous array (allocated once,
+ * grown like geonames2kd.c's add_point), and hash into an open-addressing
+ * index table (linear probing) instead of a chain of pointers -- an empty
+ * slot is -1, never a valid index, so lookups for a geonameid that isn't
+ * present still terminate correctly. Every probe touches memory within (or
+ * very near) the same array and the same small index table, instead of
+ * jumping to a different scattered allocation on every step. */
+typedef struct {
     uint64_t geonameid;
     char *name;
     long population;
-    struct NameEntry *next;
 } NameEntry;
 
-#define NAME_HASH_BUCKETS 262144
-static NameEntry *g_name_buckets[NAME_HASH_BUCKETS];
+#define NAME_HASH_SLOTS 524288 /* power of two; ~0.33 load factor for this dataset's ~170,603 cities */
+static int32_t g_name_hash_slots[NAME_HASH_SLOTS];
+static NameEntry *g_name_entries = NULL;
+static size_t g_name_entry_count = 0;
 
 static void LoadNames(const char *path) {
+    for (size_t i = 0; i < NAME_HASH_SLOTS; i++) g_name_hash_slots[i] = -1; /* correct (empty) even if the file below can't be opened */
+
     FILE *f = fopen(path, "r");
     if (!f) { printf("Warning: could not open %s, city names will be unavailable.\n", path); return; }
+
+    size_t capacity = 0, count = 0;
+    NameEntry *entries = NULL;
     char line[512];
-    long loaded = 0;
     while (fgets(line, sizeof(line), f)) {
         size_t len = strlen(line);
         while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) line[--len] = '\0';
@@ -310,24 +369,36 @@ static void LoadNames(const char *path) {
         *tab2 = '\0';
         char *popStart = tab2 + 1;
 
-        NameEntry *e = malloc(sizeof(NameEntry));
-        e->geonameid = strtoull(line, NULL, 10);
-        e->name = strdup(nameStart);
-        e->population = atol(popStart);
-        size_t bucket = e->geonameid % NAME_HASH_BUCKETS;
-        e->next = g_name_buckets[bucket];
-        g_name_buckets[bucket] = e;
-        loaded++;
+        if (count == capacity) {
+            capacity = capacity ? capacity * 2 : 65536;
+            NameEntry *new_entries = realloc(entries, capacity * sizeof(NameEntry));
+            if (!new_entries) { fprintf(stderr, "LoadNames: out of memory growing to %zu entries\n", capacity); exit(1); }
+            entries = new_entries;
+        }
+        entries[count].geonameid = strtoull(line, NULL, 10);
+        entries[count].name = strdup(nameStart);
+        entries[count].population = atol(popStart);
+        count++;
     }
     fclose(f);
-    printf("Loaded %ld city names.\n", loaded);
+
+    for (size_t i = 0; i < count; i++) {
+        size_t slot = entries[i].geonameid % NAME_HASH_SLOTS;
+        while (g_name_hash_slots[slot] != -1) slot = (slot + 1) % NAME_HASH_SLOTS;
+        g_name_hash_slots[slot] = (int32_t)i;
+    }
+
+    g_name_entries = entries;
+    g_name_entry_count = count;
+    printf("Loaded %zu city names.\n", count);
 }
 
 static NameEntry *LookupName(uint64_t geonameid) {
-    NameEntry *e = g_name_buckets[geonameid % NAME_HASH_BUCKETS];
-    while (e) {
+    size_t slot = geonameid % NAME_HASH_SLOTS;
+    while (g_name_hash_slots[slot] != -1) {
+        NameEntry *e = &g_name_entries[g_name_hash_slots[slot]];
         if (e->geonameid == geonameid) return e;
-        e = e->next;
+        slot = (slot + 1) % NAME_HASH_SLOTS;
     }
     return NULL;
 }
@@ -341,6 +412,7 @@ typedef struct {
     size_t nodes_map_size;
     size_t real_count;
     int attempted;
+    Vector3 *positions; /* cached LonLatToCartesian(lon, lat, EARTH_RADIUS_KM) per node, computed once -- see EnsureTileLoaded */
 } Tile;
 
 static Tile *g_tiles = NULL;
@@ -445,6 +517,28 @@ static Tile *EnsureTileLoaded(uint64_t manifest_idx) {
     tile->nodes = nodes;
     tile->nodes_map_size = sb.st_size;
     tile->real_count = real_count;
+
+    /* Every point's (lon, lat) is fixed city data -- it never changes from
+     * one frame to the next, so there's no reason to re-run
+     * LonLatToCartesian's trig on it every single frame the way
+     * DrawTilePoints used to. Computing it once here, the one time this
+     * tile is ever loaded, turned out to be a meaningful chunk of this
+     * viewer's per-point CPU cost profiled via clock_gettime() around
+     * WalkMetaTree: LonLatToCartesian runs on every point in every visible
+     * tile (not just the ones that end up drawn), ~170k times/frame at a
+     * typical view, entirely redundantly for a value that was already
+     * known at tile-load time. */
+    tile->positions = malloc(sizeof(Vector3) * real_count);
+    if (!tile->positions) {
+        fprintf(stderr, "EnsureTileLoaded: out of memory caching positions for %s\n", path);
+        exit(1);
+    }
+    for (size_t i = 0; i < real_count; i++) {
+        double lon = (nodes[i].size[0] + nodes[i].size[2]) / 2.0;
+        double lat = (nodes[i].size[1] + nodes[i].size[3]) / 2.0;
+        tile->positions[i] = LonLatToCartesian(lon, lat, EARTH_RADIUS_KM);
+    }
+
     g_tiles_loaded_count++;
     return tile;
 }
@@ -531,9 +625,15 @@ static void InitDotBatches(void) {
  * instead of showing as distinct dots. Sizing by a roughly-constant angular
  * radius (world size = angle * distance) keeps markers a sensible, mostly
  * distance-independent size on screen instead, clamped so it neither
- * vanishes at planetary range nor balloons absurdly at very low altitude. */
-static float CityMarkerWorldSize(float distKm, long population) {
-    float popBoost = 1.0f + 0.15f * log10f((population > 10) ? (float)population : 10.0f);
+ * vanishes at planetary range nor balloons absurdly at very low altitude.
+ *
+ * Takes log10(population) pre-computed rather than a raw population count:
+ * DrawTilePoints below also needs log10(population) for the label-threshold
+ * curve, and log10f is a real transcendental-function cost at ~88k calls/
+ * frame -- computing it once and reusing it here avoids doing it twice per
+ * point for the identical value. */
+static float CityMarkerWorldSize(float distKm, float log10Pop) {
+    float popBoost = 1.0f + 0.15f * log10Pop;
     float angularRadius = 0.0009f * popBoost;
     float sz = angularRadius * distKm;
     if (sz < 0.3f) sz = 0.3f;
@@ -575,20 +675,20 @@ static int g_label_count = 0;
  * the tile-level CellVisible check above only gates whether we bothered to
  * load/scan this tile at all, so any looseness there never leaks into what
  * actually gets rendered. */
-static void DrawTilePoints(const Tile *tile, const Plane fr[6], Vector3 camPos, float altitudeKm) {
+static void DrawTilePoints(const Tile *tile, const Plane fr[6], const HorizonTest *ht, Vector3 camPos, float altitudeKm) {
     for (size_t i = 0; i < tile->real_count; i++) {
         const kd_2d_f64_mmap_node *node = &tile->nodes[i];
         if (node->source_id == 0) continue;
-        double lon = (node->size[0] + node->size[2]) / 2.0;
-        double lat = (node->size[1] + node->size[3]) / 2.0;
-        Vector3 pos = LonLatToCartesian(lon, lat, EARTH_RADIUS_KM);
-        if (!IsAboveHorizon(pos, camPos)) continue;
+        Vector3 pos = tile->positions[i]; /* precomputed once in EnsureTileLoaded, see its comment */
+        if (!IsAboveHorizonFast(pos, ht)) continue;
         if (!PointInFrustum(fr, pos)) continue;
 
         NameEntry *ne = LookupName(node->source_id);
         long population = ne ? ne->population : 0;
+        float popf = (population > 10) ? (float)population : 10.0f;
+        float log10Pop = log10f(popf);
         float distKm = Vector3Distance(camPos, pos);
-        DrawCityPoint(pos, CityMarkerWorldSize(distKm, population));
+        DrawCityPoint(pos, CityMarkerWorldSize(distKm, log10Pop));
 
         if (ne && g_label_count < MAX_LABELS_PER_FRAME) {
             /* Steep population curve so labels appear progressively, the way
@@ -598,8 +698,7 @@ static void DrawTilePoints(const Tile *tile, const Plane fr[6], Vector3 camPos, 
              * first) made every hamlet within view label at once, an
              * unreadable wall of text -- see the ingestion plan notes on
              * this being tuned to taste, easy to adjust further. */
-            float popf = (population > 10) ? (float)population : 10.0f;
-            float labelThresholdKm = 60.0f * log10f(popf) - 130.0f;
+            float labelThresholdKm = 60.0f * log10Pop - 130.0f;
             if (altitudeKm < labelThresholdKm) {
                 PendingLabel *pl = &g_labels[g_label_count++];
                 pl->worldPos = pos;
@@ -614,18 +713,18 @@ static void DrawTilePoints(const Tile *tile, const Plane fr[6], Vector3 camPos, 
  * viewer deliberately doesn't build -- see the file header comment), so
  * this always visits every node rather than pruning subtrees; at ~150
  * entries that's trivial. */
-static void WalkMetaTree(int64_t idx, const Plane fr[6], Vector3 camPos, float altitudeKm) {
+static void WalkMetaTree(int64_t idx, const Plane fr[6], const HorizonTest *ht, Vector3 camPos, float altitudeKm) {
     if (idx < 0) return;
     const kd_2d_f64_mmap_node *node = &g_meta_nodes[idx];
 
-    if (CellVisible(node->size[0], node->size[1], node->size[2], node->size[3], fr, camPos)) {
+    if (CellVisible(node->size[0], node->size[1], node->size[2], node->size[3], fr, ht)) {
         uint64_t manifestIdx = node->source_id - 1;
         Tile *tile = EnsureTileLoaded(manifestIdx);
-        if (tile) DrawTilePoints(tile, fr, camPos, altitudeKm);
+        if (tile) DrawTilePoints(tile, fr, ht, camPos, altitudeKm);
     }
 
-    WalkMetaTree(node->left_child, fr, camPos, altitudeKm);
-    WalkMetaTree(node->right_child, fr, camPos, altitudeKm);
+    WalkMetaTree(node->left_child, fr, ht, camPos, altitudeKm);
+    WalkMetaTree(node->right_child, fr, ht, camPos, altitudeKm);
 }
 
 /* --- Orbit camera: (lon, lat, altitude) instead of viewer.c's free-fly
@@ -750,6 +849,7 @@ int main(void) {
         Matrix matViewProj = MatrixMultiply(matView, matProj);
         Plane frustum[6];
         ExtractFrustumPlanes(matViewProj, frustum);
+        HorizonTest horizonTest = ComputeHorizonTest(camera.position);
 
         Vector3 camForward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
         g_billboardRight = Vector3Normalize(Vector3CrossProduct(camForward, camera.up));
@@ -783,7 +883,7 @@ int main(void) {
              * batch meshes below (see their comment); the actual upload and
              * draw happens after traversal completes. */
             rlDisableBackfaceCulling();
-            WalkMetaTree(0, frustum, camera.position, oc.altitude);
+            WalkMetaTree(0, frustum, &horizonTest, camera.position, oc.altitude);
             for (int b = 0; b < g_dotBatchesUsed; b++) {
                 DotBatch *batch = &g_dotBatches[b];
                 if (batch->quadCount == 0) continue;
@@ -826,21 +926,15 @@ int main(void) {
 
     for (size_t i = 0; i < g_manifest_count; i++) {
         if (g_tiles[i].nodes) munmap(g_tiles[i].nodes, g_tiles[i].nodes_map_size);
+        free(g_tiles[i].positions);
         free(g_manifest_paths[i]);
     }
     free(g_tiles);
     free(g_manifest_paths);
     munmap(g_meta_nodes, g_meta_nodes_map_size);
 
-    for (int b = 0; b < NAME_HASH_BUCKETS; b++) {
-        NameEntry *e = g_name_buckets[b];
-        while (e) {
-            NameEntry *next = e->next;
-            free(e->name);
-            free(e);
-            e = next;
-        }
-    }
+    for (size_t i = 0; i < g_name_entry_count; i++) free(g_name_entries[i].name);
+    free(g_name_entries);
 
     printf("Viewer closed successfully.\n");
     return 0;
