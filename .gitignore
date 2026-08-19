@@ -26,4 +26,7 @@ C/healpix_to_coords
 # from a GeoNames download -- see README-cities.md)
 citydata/
 parallel_times
+# Go viewer binaries
+viewers/go/earthviewer/earthviewer
+viewers/go/starviewer/starviewer
 
