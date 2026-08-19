@@ -1,0 +1,10 @@
+[package]
+name = "kdmmap"
+version = "1.0.0"
+edition = "2021"
+authors = ["Murf <murf@parsetree.com>"]
+description = "Mmaps this project's .kdtree/.metatree/.lod files, overlaid as Rust structs matching the C layout exactly"
+publish = false
+
+[dependencies]
+memmap2 = "0.9"

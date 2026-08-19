@@ -1,0 +1,11 @@
+[package]
+name = "earthviewer"
+version = "1.0.0"
+edition = "2021"
+authors = ["Murf <murf@parsetree.com>"]
+description = "Rust port of C/earth_viewer.c: a raylib viewer for GeoNames city data over Earth's sphere"
+publish = false
+
+[dependencies]
+raylib = "5"
+kdmmap = { path = "../kdmmap" }

@@ -1,0 +1,10 @@
+[package]
+name = "kdtree-viewers-spike"
+version = "1.0.0"
+edition = "2021"
+authors = ["Murf <murf@parsetree.com>"]
+description = "Toolchain spike for the Rust port of the C raylib viewers"
+publish = false
+
+[dependencies]
+raylib = "5"

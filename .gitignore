@@ -4,6 +4,7 @@ go/kd.go.bottom
 # Rust
 2d/rust/target/
 3d/rust/target/
+viewers/rust/target/
 # C
 *.a
 *.o

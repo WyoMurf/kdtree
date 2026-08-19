@@ -1,0 +1,11 @@
+[package]
+name = "starviewer"
+version = "1.0.0"
+edition = "2021"
+authors = ["Murf <murf@parsetree.com>"]
+description = "Rust port of C/viewer.c: a raylib viewer for the Gaia DR3 star catalog"
+publish = false
+
+[dependencies]
+raylib = "5"
+kdmmap = { path = "../kdmmap" }
