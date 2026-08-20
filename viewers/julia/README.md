@@ -62,26 +62,24 @@ Both windows close with Esc or the window's close button. First launch
 is slower than later ones — Julia is JIT-compiling everything, not
 hanging.
 
-## A known limitation: fixed render distance
+## Resolved: the old fixed render distance
 
-Still present after the raylib 6.0 upgrade, for a more specific reason
-than before. raylib 6.0 itself did add a real runtime API for this —
-`rlSetClipPlanes(near, far)`, in `rlgl.h` — but `Raylib.jl`'s binding
-generator has never parsed `rlgl.h` at all, only `raylib.h`/`raygui.h`/
-`raymath.h` (true on 4.0 and still true on 6.0), so that function isn't
-reachable from Julia either way. The far clip distance is therefore
-still effectively fixed at raylib's compile-time default
-(`RL_CULL_DISTANCE_FAR`, ~1000 world units). Since real km/parsecs can't
-be used as world units directly (a default camera altitude of 20,000 km,
-or a star catalog spanning 50,000 pc, would be clipped away entirely),
-every position and size actually handed to raylib is scaled down by a
-fixed factor (`WORLD_UNIT_KM` in `earthviewer/geo.jl`, `WORLD_UNIT_PC` in
-`starviewer/render.jl`). Altitude, flight speed, and the HUD display all
-stay in real, unscaled km/parsecs — this is invisible in normal use, but
-explains why those two constants exist if you're reading the source.
-Actually removing this limitation would mean adding `rlgl.h` parsing to
-`Raylib.jl` itself — a real upstream gap, not something this version
-bump alone fixes.
+Both viewers used to scale every position/size down by a fixed factor
+(`WORLD_UNIT_KM`/`WORLD_UNIT_PC`) to stay under raylib's compile-time
+far-clip default (~1000 world units) — raylib 4.0 had no runtime API to
+change it at all. `Raylib.jl` now binds `rlgl.h` (previously unparsed on
+any raylib version), exposing `rlSetClipPlanes(near, far)`; both viewers
+call it once at startup with real near/far km/pc distances, matching the
+same distances their own CPU-side culling frustum already used. Every
+position and size handed to raylib is real, unscaled km/parsecs directly
+now — `WORLD_UNIT_KM`/`WORLD_UNIT_PC` are gone.
+
+Verified via the visual smoke tests below against real data: output is
+visually identical to before the change (down to near-identical drawn-
+point counts — the tiny remaining difference is boundary-condition
+floating-point noise from computing in real units instead of scaled
+ones, not a behavior change), with no depth-precision/z-fighting
+artifacts from the much wider near:far ratio now in play.
 
 The star viewer also renders stars as batched dynamic meshes rather than
 `viewer.c`'s raw `rlBegin(RL_QUADS)`/`rlVertex3f` immediate-mode calls —

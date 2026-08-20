@@ -222,7 +222,7 @@ version = "1.11.0"
 
 [[deps.Raylib]]
 deps = ["CEnum", "Colors", "Raylib_jll", "StaticArrays"]
-git-tree-sha1 = "492fb7f51851c0e520252df424f445dfd9f9e9bb"
+git-tree-sha1 = "0cec1ff07abd4ccf0a0932292b6f87cb68bb8435"
 repo-rev = "main"
 repo-url = "https://github.com/WyoMurf/Raylib.jl"
 uuid = "681baf3e-1d1e-48c9-b5e5-b1aea2d6d4d9"

@@ -108,12 +108,10 @@ end
 function city_marker_world_size(dist_km, log10_pop)
     pop_boost = 1.0f0 + 0.15f0 * Float32(log10_pop)
     angular_radius = 0.0009f0 * pop_boost
-    # The angular_radius*dist term is scale-invariant (dist_km is now
-    # computed from already-scaled positions, see geo.jl's WORLD_UNIT_KM
-    # comment, and the result is used directly in that same scaled
-    # space) - but the clamp bounds are absolute sizes tuned in real km
-    # (0.3 km min, 150 km max), so they need the same conversion.
-    return clamp(angular_radius * Float32(dist_km), 0.3f0 / WORLD_UNIT_KM, 150.0f0 / WORLD_UNIT_KM)
+    # dist_km and every position here are real km throughout (see geo.jl),
+    # so the clamp bounds are plain real-km literals too (0.3 km min, 150
+    # km max) - no unit conversion needed.
+    return clamp(angular_radius * Float32(dist_km), 0.3f0, 150.0f0)
 end
 
 # Writes one camera-facing billboard quad directly into the current

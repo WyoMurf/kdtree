@@ -6,7 +6,6 @@
 # tiles.jl/dots.jl/camera.jl for the pieces; this file wires them together.
 using Raylib
 using Raylib.Binding
-using Raylib_jll
 using LinearAlgebra
 
 include(joinpath(@__DIR__, "..", "kdmmap.jl"))
@@ -21,13 +20,8 @@ include(joinpath(@__DIR__, "camera.jl"))
 
 const EARTH_TEXTURE_PATH = "earth_daymap.jpg"
 
-# raylib_api.xml doesn't cover rlgl.h, so Raylib.jl doesn't bind these -
-# thin ccalls straight against the process's raylib shared library
-# (mirrors spike.jl's approach).
-rl_enable_backface_culling() = ccall((:rlEnableBackfaceCulling, Raylib_jll.libraylib), Cvoid, ())
-rl_disable_backface_culling() = ccall((:rlDisableBackfaceCulling, Raylib_jll.libraylib), Cvoid, ())
-# Note: rlSetClipPlanes (raylib 5.0+) doesn't exist in this build's raylib
-# 4.0 - see geo.jl's WORLD_UNIT_KM comment for how that's worked around.
+rl_enable_backface_culling() = Binding.rlEnableBackfaceCulling()
+rl_disable_backface_culling() = Binding.rlDisableBackfaceCulling()
 
 function main()
     if !isfile("cities.metatree")
@@ -113,12 +107,15 @@ function main()
     )
 
     Binding.SetTargetFPS(60)
-    # This build of raylib has no runtime API to change its own internal
-    # (~1000-world-unit) far clip distance - see geo.jl's WORLD_UNIT_KM
-    # comment. near_clip/far_clip here only bound the *culling* frustum
-    # this viewer computes for itself (extract_frustum_planes below), in
-    # the same scaled world-unit space every position is now in.
-    near_clip, far_clip = 0.01, 2000.0
+    # Real km throughout: near=3km, far=600,000km (comfortably past the
+    # worst case of max altitude 150,000km looking at the far horizon).
+    # near_clip/far_clip double as both the *culling* frustum this viewer
+    # computes for itself (extract_frustum_planes below) and, via
+    # rlSetClipPlanes, raylib's own internal rendering far clip - keeping
+    # both consistent matters now that far_clip is well past raylib's old
+    # fixed ~1000-world-unit default.
+    near_clip, far_clip = 3.0, 600_000.0
+    Binding.rlSetClipPlanes(near_clip, far_clip)
 
     while !Binding.WindowShouldClose()
         frame_count += 1

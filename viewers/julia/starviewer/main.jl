@@ -7,7 +7,6 @@
 # together.
 using Raylib
 using Raylib.Binding
-using Raylib_jll
 using LinearAlgebra
 
 include(joinpath(@__DIR__, "..", "kdmmap.jl"))
@@ -19,13 +18,8 @@ include(joinpath(@__DIR__, "render.jl"))
 include(joinpath(@__DIR__, "shard.jl"))
 include(joinpath(@__DIR__, "camera.jl"))
 
-# raylib_api.xml doesn't cover rlgl.h, so Raylib.jl doesn't bind these -
-# thin ccalls straight against the process's raylib shared library
-# (mirrors spike.jl's approach). rlSetClipPlanes (raylib 5.0+) doesn't
-# exist in this build's raylib 4.0 at all - see render.jl's WORLD_UNIT_PC
-# comment for how that's worked around.
-rl_enable_backface_culling() = ccall((:rlEnableBackfaceCulling, Raylib_jll.libraylib), Cvoid, ())
-rl_disable_backface_culling() = ccall((:rlDisableBackfaceCulling, Raylib_jll.libraylib), Cvoid, ())
+rl_enable_backface_culling() = Binding.rlEnableBackfaceCulling()
+rl_disable_backface_culling() = Binding.rlDisableBackfaceCulling()
 
 function main()
     # catalog.metatree/.metatree.lod/.manifest are produced by
@@ -64,7 +58,7 @@ function main()
     # nearby; fly/look around to reveal whatever's actually there.
     camera = Raylib.RayCamera3D(
         Raylib.rayvector(0.0, 0.0, 0.0), # centered at Sun/Earth
-        Raylib.rayvector(0.0, 0.0, 20.0 / WORLD_UNIT_PC),
+        Raylib.rayvector(0.0, 0.0, 20.0),
         Raylib.rayvector(0.0, 1.0, 0.0),
         60.0f0,
         Raylib.CAMERA_PERSPECTIVE,
@@ -72,31 +66,31 @@ function main()
     speed = Ref(20.0f0) # real parsecs per second
 
     # SV_CAM_*/SV_TARGET_* override the starting camera position/target,
-    # given in real parsecs (converted to this viewer's scaled world
-    # units below); SV_SCREENSHOT/SV_SCREENSHOT_FRAME capture and quit -
-    # the same env-var-driven smoke-test convention earth_viewer.c
+    # given in real parsecs; SV_SCREENSHOT/SV_SCREENSHOT_FRAME capture and
+    # quit - the same env-var-driven smoke-test convention earth_viewer.c
     # established (EV_LON/EV_LAT/EV_ALT/EV_SCREENSHOT), adapted to this
     # viewer's free-fly camera instead of an orbit camera. There's no
     # interactive test harness for a GUI app, so this is the automatable
     # substitute.
-    haskey(ENV, "SV_CAM_X") && (camera.position = Raylib.rayvector(parse(Float64, ENV["SV_CAM_X"]) / WORLD_UNIT_PC, camera.position[2], camera.position[3]))
-    haskey(ENV, "SV_CAM_Y") && (camera.position = Raylib.rayvector(camera.position[1], parse(Float64, ENV["SV_CAM_Y"]) / WORLD_UNIT_PC, camera.position[3]))
-    haskey(ENV, "SV_CAM_Z") && (camera.position = Raylib.rayvector(camera.position[1], camera.position[2], parse(Float64, ENV["SV_CAM_Z"]) / WORLD_UNIT_PC))
-    haskey(ENV, "SV_TARGET_X") && (camera.target = Raylib.rayvector(parse(Float64, ENV["SV_TARGET_X"]) / WORLD_UNIT_PC, camera.target[2], camera.target[3]))
-    haskey(ENV, "SV_TARGET_Y") && (camera.target = Raylib.rayvector(camera.target[1], parse(Float64, ENV["SV_TARGET_Y"]) / WORLD_UNIT_PC, camera.target[3]))
-    haskey(ENV, "SV_TARGET_Z") && (camera.target = Raylib.rayvector(camera.target[1], camera.target[2], parse(Float64, ENV["SV_TARGET_Z"]) / WORLD_UNIT_PC))
+    haskey(ENV, "SV_CAM_X") && (camera.position = Raylib.rayvector(parse(Float64, ENV["SV_CAM_X"]), camera.position[2], camera.position[3]))
+    haskey(ENV, "SV_CAM_Y") && (camera.position = Raylib.rayvector(camera.position[1], parse(Float64, ENV["SV_CAM_Y"]), camera.position[3]))
+    haskey(ENV, "SV_CAM_Z") && (camera.position = Raylib.rayvector(camera.position[1], camera.position[2], parse(Float64, ENV["SV_CAM_Z"])))
+    haskey(ENV, "SV_TARGET_X") && (camera.target = Raylib.rayvector(parse(Float64, ENV["SV_TARGET_X"]), camera.target[2], camera.target[3]))
+    haskey(ENV, "SV_TARGET_Y") && (camera.target = Raylib.rayvector(camera.target[1], parse(Float64, ENV["SV_TARGET_Y"]), camera.target[3]))
+    haskey(ENV, "SV_TARGET_Z") && (camera.target = Raylib.rayvector(camera.target[1], camera.target[2], parse(Float64, ENV["SV_TARGET_Z"])))
     screenshot_path = get(ENV, "SV_SCREENSHOT", "")
     screenshot_frame = parse(Int, get(ENV, "SV_SCREENSHOT_FRAME", "30"))
     frame_count = 0
 
     Binding.SetTargetFPS(60)
-    # This build of raylib has no runtime API to change its own internal
-    # (~1000-world-unit) far clip distance - see render.jl's
-    # WORLD_UNIT_PC comment. near_clip/far_clip here only bound the
-    # *culling* frustum this viewer computes for itself
-    # (extract_frustum_planes below), in the same scaled world-unit
-    # space every position is now in.
-    near_clip, far_clip = 0.001, 50_000.0 / WORLD_UNIT_PC
+    # Real parsecs throughout: near=0.1pc, far=50,000pc (the catalog's
+    # full extent). near_clip/far_clip double as both the *culling*
+    # frustum this viewer computes for itself (extract_frustum_planes
+    # below) and, via rlSetClipPlanes, raylib's own internal rendering
+    # far clip - keeping both consistent matters now that far_clip is
+    # well past raylib's old fixed ~1000-world-unit default.
+    near_clip, far_clip = 0.1, 50_000.0
+    Binding.rlSetClipPlanes(near_clip, far_clip)
 
     lod_pixel_target = Ref(2.0f0)
 
@@ -146,9 +140,9 @@ function main()
 
         Binding.BeginMode3D(camera)
         # Draw axis reference for spatial awareness (X=Red, Y=Green, Z=Blue).
-        Binding.DrawLine3D(Raylib.rayvector(0.0, 0.0, 0.0), Raylib.rayvector(100.0 / WORLD_UNIT_PC, 0.0, 0.0), Raylib.RED)
-        Binding.DrawLine3D(Raylib.rayvector(0.0, 0.0, 0.0), Raylib.rayvector(0.0, 100.0 / WORLD_UNIT_PC, 0.0), Raylib.GREEN)
-        Binding.DrawLine3D(Raylib.rayvector(0.0, 0.0, 0.0), Raylib.rayvector(0.0, 0.0, 100.0 / WORLD_UNIT_PC), Raylib.BLUE)
+        Binding.DrawLine3D(Raylib.rayvector(0.0, 0.0, 0.0), Raylib.rayvector(100.0, 0.0, 0.0), Raylib.RED)
+        Binding.DrawLine3D(Raylib.rayvector(0.0, 0.0, 0.0), Raylib.rayvector(0.0, 100.0, 0.0), Raylib.GREEN)
+        Binding.DrawLine3D(Raylib.rayvector(0.0, 0.0, 0.0), Raylib.rayvector(0.0, 0.0, 100.0), Raylib.BLUE)
 
         # Walk the meta-tree of shards: cull whole subtrees of shards
         # against the view frustum, collapse distant ones to a single
@@ -181,8 +175,8 @@ function main()
             "Shards mmap'd so far: $(world.shards_loaded_count) / $(manifest_count(world)) indexed | Stars discovered: ~$(world.stars_discovered)",
             10, 58, 16, Raylib.RAYWHITE,
         )
-        cp = camera.position .* WORLD_UNIT_PC
-        ct = camera.target .* WORLD_UNIT_PC
+        cp = camera.position
+        ct = camera.target
         Binding.DrawText("Cam Position: ($(round(cp[1],digits=1)), $(round(cp[2],digits=1)), $(round(cp[3],digits=1))) pc", 10, 80, 16, Raylib.RAYWHITE)
         Binding.DrawText("Looking at Loaded Sector: ($(round(ct[1],digits=1)), $(round(ct[2],digits=1)), $(round(ct[3],digits=1))) pc", 10, 100, 16, Raylib.RAYWHITE)
         Binding.DrawText("Flight Speed: $(round(speed[],digits=1)) pc/s", 10, 120, 16, Raylib.YELLOW)

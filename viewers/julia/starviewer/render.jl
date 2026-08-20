@@ -1,21 +1,15 @@
 # Must match fits2kd.c's fixed-point scale (parsecs -> integer units).
 const SCALE_FACTOR = 1.0e9
 
-# This Julia binding (Raylib.jl, via Raylib_jll) is pinned to raylib 4.0,
-# which predates rlSetClipPlanes - there is no runtime API to change the
-# far clip distance in this build at all, and it's baked in at roughly
-# 1000 world units (see earthviewer/geo.jl's WORLD_UNIT_KM comment for
-# how this was found). The star catalog spans up to ~50,000 pc, which
-# can't be used as world units directly, so every position/size fed to
-# raylib is scaled down by WORLD_UNIT_PC - chosen so the catalog's full
-# extent stays comfortably under the ~1000-unit ceiling. `speed` (parsecs
-# per second, camera.jl) and the HUD display stay in real, unscaled
-# parsecs - only the actual Vector3 positions/sizes handed to raylib go
-# through this conversion. Combined with SCALE_FACTOR (the fixed-point
-# integer -> parsec conversion), NODE_SCALE converts a raw fixed-point
-# node coordinate directly to a scaled world-space unit in one division.
-const WORLD_UNIT_PC = 100.0
-const NODE_SCALE = SCALE_FACTOR * WORLD_UNIT_PC
+# Positions/sizes are handed to raylib as real, unscaled parsecs
+# directly. Raylib.jl now binds rlgl.h (see main.jl's rlSetClipPlanes
+# call), which raises raylib's own internal far clip distance to match
+# the real-pc near/far this viewer's own culling frustum already used -
+# previously (on raylib 4.0, with no such runtime API at all) every
+# position/size had to be scaled down by a WORLD_UNIT_PC constant to
+# stay under raylib's fixed ~1000-world-unit ceiling instead. NODE_SCALE
+# converts a raw fixed-point node coordinate directly to real parsecs.
+const NODE_SCALE = SCALE_FACTOR
 
 # Hard safety valve: some subtrees (e.g. a parallax segment spanning
 # thousands of parsecs) have a bounding box large enough that
@@ -38,7 +32,7 @@ const MAX_SHARD_LOADS_PER_FRAME = 64
 # point once its angular size (as seen from the camera) drops below this
 # many screen pixels. Smaller = more detail + slower, larger = coarser +
 # faster. Angular size is a dimensionless ratio (diag/distance), so it's
-# scale-invariant - these thresholds need no WORLD_UNIT_PC conversion.
+# scale-invariant regardless of what units positions are in.
 # Tuned live with '[' / ']' and nudged automatically toward a comfortable
 # frame time (see main.jl's loop).
 const LOD_PIXEL_TARGET_MIN = 0.25f0
@@ -50,12 +44,14 @@ const LOD_PIXEL_TARGET_MAX = 64.0f0
 # what viewer.c itself does, and what this port originally did too).
 # That turned out not to work on this Julia binding's raylib 4.0 build
 # specifically: raylib's rlgl has a fixed-size internal vertex batch
-# buffer that's meant to auto-flush transparently when full, but on this
-# build it instead prints "RLGL: Batch elements overflow" and leaves
+# buffer that's meant to auto-flush transparently when full, but on that
+# build it instead printed "RLGL: Batch elements overflow" and left
 # rlgl's internal state broken badly enough that the *entire* frame
-# (including unrelated 2D HUD text) came out solid black - confirmed by
+# (including unrelated 2D HUD text) came out solid black - found by
 # testing against the real catalog, where a single frame near the Sun
 # draws tens of thousands of stars, several times the batch's capacity.
+# Not re-verified against 6.0 (the batched approach works regardless, so
+# there's been no reason to revisit it).
 # Mirrors earthviewer/dots.jl's batching approach, with two additions
 # city dots didn't need: a bound texture (the glow sprite) and a
 # per-vertex color buffer (star brightness varies per star, unlike city
@@ -186,32 +182,29 @@ end
 # brighter/larger. When a single point stands in for a collapsed subtree
 # of hidden_count unresolved stars, brighten/enlarge it a bit so dense
 # regions still read as dense from far away, instead of looking like one
-# dim star. dist is in the same scaled world-space units as every
-# position here, so the distance thresholds and size outputs (originally
-# tuned in real parsecs) are divided by WORLD_UNIT_PC to match - the
-# earthviewer port's city-marker-size clamp bug is exactly the mistake
-# being avoided here (an absolute distance/size constant left unscaled
-# after the positions it's compared against were scaled).
+# dim star. dist and every position here are real parsecs, so the
+# distance thresholds and size outputs are plain real-pc literals too -
+# no unit conversion needed.
 function star_brightness(dist::Float32, hidden_count::UInt32)
-    near_thresh = Float32(50.0 / WORLD_UNIT_PC)
-    far_thresh = Float32(3000.0 / WORLD_UNIT_PC)
+    near_thresh = 50.0f0
+    far_thresh = 3000.0f0
 
     local a::UInt8, sz::Float32
     if dist < near_thresh
-        a, sz = 0xff, Float32(0.20 / WORLD_UNIT_PC)
+        a, sz = 0xff, 0.20f0
     elseif dist > far_thresh
-        a, sz = 0x2d, Float32(0.01 / WORLD_UNIT_PC)
+        a, sz = 0x2d, 0.01f0
     else
         t = (dist - near_thresh) / (far_thresh - near_thresh)
         a = UInt8(round(255.0f0 - t * 210.0f0))
-        sz = Float32((0.20 - t * 0.19) / WORLD_UNIT_PC)
+        sz = 0.20f0 - t * 0.19f0
     end
 
     if hidden_count > 1
         boost = 20.0f0 * log2(Float32(hidden_count))
         boosted = Int(a) + Int(round(boost))
         a = UInt8(min(boosted, 255))
-        sz += Float32(0.02 * log2(Float32(hidden_count)) / WORLD_UNIT_PC)
+        sz += 0.02f0 * log2(Float32(hidden_count))
     end
 
     return a, sz

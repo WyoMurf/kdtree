@@ -1,19 +1,11 @@
-# This Julia binding (Raylib.jl, via Raylib_jll) is pinned to raylib 4.0,
-# which predates rlSetClipPlanes - there is no runtime API to change the
-# far clip distance in this build at all, and it's baked in at roughly
-# 1000 world units (confirmed empirically: geometry beyond ~1000 units
-# from the camera renders as visibly clipped/fragmented, and fully
-# vanishes past that). Real km can't be used as world units directly
-# (the default camera altitude alone is 20,000 km), so every position fed
-# to raylib is scaled down by WORLD_UNIT_KM - chosen so that even the
-# worst case (max altitude 150,000 km, looking at the horizon on the far
-# side of the globe) stays comfortably under the ~1000-unit ceiling.
-# oc.altitude (camera.jl) and the label-threshold math (tiles.jl) stay in
-# real, unscaled km throughout - only the actual Vector3 positions handed
-# to raylib (this constant, and the altitude-to-position step in
-# update_orbit_camera!) go through this conversion.
-const WORLD_UNIT_KM = 300.0f0
-const EARTH_RADIUS_KM = 6371.0f0 / WORLD_UNIT_KM
+# Positions are handed to raylib as real, unscaled km directly. Raylib.jl
+# now binds rlgl.h (see main.jl's rlSetClipPlanes call), which raises
+# raylib's own internal far clip distance to match the real-km near/far
+# this viewer's own culling frustum already used - previously (on raylib
+# 4.0, with no such runtime API at all) every position had to be scaled
+# down by a WORLD_UNIT_KM constant to stay under raylib's fixed
+# ~1000-world-unit ceiling instead.
+const EARTH_RADIUS_KM = 6371.0f0
 
 # Verbatim from earth_viewer.c's LonLatToCartesian. Longitude is negated:
 # raylib/OpenGL's right-handed, Y-up world means +sin(lon) for Z maps

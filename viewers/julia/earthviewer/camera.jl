@@ -35,10 +35,9 @@ function update_orbit_camera!(oc::OrbitCamera, camera::Raylib.RayCamera3D, delta
 
     surface_point = lon_lat_to_cartesian(oc.lon, oc.lat, EARTH_RADIUS_KM)
     outward = normalize(surface_point)
-    # oc.altitude is real km; EARTH_RADIUS_KM (and thus surface_point) is
-    # already in raylib world units (see geo.jl's WORLD_UNIT_KM comment),
-    # so the altitude offset needs the same conversion here.
-    camera.position = surface_point + outward * (oc.altitude / WORLD_UNIT_KM)
+    # oc.altitude and surface_point are both real km (see geo.jl) - no
+    # scaling conversion needed between them.
+    camera.position = surface_point + outward * oc.altitude
     camera.target = Raylib.rayvector(0.0, 0.0, 0.0)
 
     # "Up" is the local north tangent direction, not a blindly-fixed

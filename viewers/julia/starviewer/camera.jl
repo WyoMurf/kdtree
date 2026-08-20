@@ -12,11 +12,9 @@ end
 
 # A custom camera flying control scheme: WASD/QE to move, click-drag with
 # either mouse button to look around, up/down arrows to adjust flight
-# speed exponentially. speed is real parsecs/second (matches the HUD
-# display in main.jl); camera.position/target are in the scaled
-# world-space units every position in this viewer uses (see render.jl's
-# WORLD_UNIT_PC comment), so the actual per-frame displacement converts
-# speed to that same scale.
+# speed exponentially. speed is real parsecs/second, and camera.position/
+# target are real parsecs too (see render.jl), so the per-frame
+# displacement is just speed*delta_time directly - no unit conversion.
 function update_free_camera!(camera::Raylib.RayCamera3D, speed::Ref{Float32}, delta_time::Float32)
     if Binding.IsKeyDown(Int(Raylib.KEY_UP))
         speed[] *= 1.05f0
@@ -39,7 +37,7 @@ function update_free_camera!(camera::Raylib.RayCamera3D, speed::Ref{Float32}, de
     Binding.IsKeyDown(Int(Raylib.KEY_Q)) && (move = move - camera.up)
 
     if norm(move) > 0.0f0
-        displacement = normalize(move) * Float32(speed[] * delta_time / WORLD_UNIT_PC)
+        displacement = normalize(move) * Float32(speed[] * delta_time)
         camera.position = camera.position + displacement
         camera.target = camera.target + displacement
     end
