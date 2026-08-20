@@ -37,10 +37,13 @@ mutable struct Renderer
     labels::Vector{PendingLabel}
 end
 
+# raylib 6.0's Mesh gained boneCount and reordered bone*/anim* fields
+# (boneIds -> boneIndices) relative to the 4.0 layout this was written against.
 with_triangle_count(mesh::Raylib.RayMesh, tc::Integer) = Raylib.RayMesh(
     mesh.vertexCount, Cint(tc), mesh.vertices, mesh.texcoords, mesh.texcoords2,
-    mesh.normals, mesh.tangents, mesh.colors, mesh.indices, mesh.animVertices,
-    mesh.animNormals, mesh.boneIds, mesh.boneWeights, mesh.vaoId, mesh.vboId,
+    mesh.normals, mesh.tangents, mesh.colors, mesh.indices, mesh.boneCount,
+    mesh.boneIndices, mesh.boneWeights, mesh.animVertices, mesh.animNormals,
+    mesh.vaoId, mesh.vboId,
 )
 
 function init_dot_batch()
@@ -64,7 +67,8 @@ function init_dot_batch()
         Cint(max_verts), Cint(max_tris), # capacity; per-frame draws lower this to quad_count*2
         vertices, Ptr{Cfloat}(C_NULL), Ptr{Cfloat}(C_NULL), Ptr{Cfloat}(C_NULL), Ptr{Cfloat}(C_NULL),
         Ptr{Cuchar}(C_NULL), Ptr{Cuchar}(indices),
-        Ptr{Cfloat}(C_NULL), Ptr{Cfloat}(C_NULL), Ptr{Cuchar}(C_NULL), Ptr{Cfloat}(C_NULL),
+        Cint(0), Ptr{Cuchar}(C_NULL), Ptr{Cfloat}(C_NULL),
+        Ptr{Cfloat}(C_NULL), Ptr{Cfloat}(C_NULL),
         Cuint(0), Ptr{Cuint}(C_NULL),
     )
     meshref = Ref(mesh)

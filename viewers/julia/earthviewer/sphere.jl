@@ -103,7 +103,8 @@ function gen_earth_sphere_mesh_band(radius_km, rings, slices, row_start, row_end
         Cint(vertex_count), Cint(triangle_count),
         vertices, texcoords, Ptr{Cfloat}(C_NULL), normals, Ptr{Cfloat}(C_NULL),
         Ptr{Cuchar}(C_NULL), Ptr{Cuchar}(indices),
-        Ptr{Cfloat}(C_NULL), Ptr{Cfloat}(C_NULL), Ptr{Cuchar}(C_NULL), Ptr{Cfloat}(C_NULL),
+        Cint(0), Ptr{Cuchar}(C_NULL), Ptr{Cfloat}(C_NULL),
+        Ptr{Cfloat}(C_NULL), Ptr{Cfloat}(C_NULL),
         Cuint(0), Ptr{Cuint}(C_NULL),
     )
     meshref = Ref(mesh)

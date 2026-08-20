@@ -133,7 +133,8 @@ function init_star_batch(star_texture)
         Cint(max_verts), Cint(max_tris), # capacity; per-frame draws lower this to quad_count*2
         vertices, texcoords, Ptr{Cfloat}(C_NULL), Ptr{Cfloat}(C_NULL), Ptr{Cfloat}(C_NULL),
         Ptr{Cuchar}(colors), Ptr{Cuchar}(indices),
-        Ptr{Cfloat}(C_NULL), Ptr{Cfloat}(C_NULL), Ptr{Cuchar}(C_NULL), Ptr{Cfloat}(C_NULL),
+        Cint(0), Ptr{Cuchar}(C_NULL), Ptr{Cfloat}(C_NULL),
+        Ptr{Cfloat}(C_NULL), Ptr{Cfloat}(C_NULL),
         Cuint(0), Ptr{Cuint}(C_NULL),
     )
     meshref = Ref(mesh)

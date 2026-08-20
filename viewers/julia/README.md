@@ -6,6 +6,13 @@ auto-generated from raylib's own `raylib_api.xml`/`raymath_api.xml`,
 backed by `Raylib_jll`'s precompiled binaries — no system packages or
 compilation needed).
 
+Currently pinned via `Project.toml`'s `[sources]` override to
+[WyoMurf/Raylib.jl](https://github.com/WyoMurf/Raylib.jl)`@main` — a
+raylib 4.0 → 6.0 binding upgrade, pending as
+[upstream PR #35](https://github.com/chengchingwen/Raylib.jl/pull/35).
+Switch back to the plain registered `Raylib` package (drop the
+`[sources]` block) once that merges and a new version is tagged.
+
 - `earthviewer/` — orbits Earth, rendering GeoNames city data
   (`README-cities.md`)
 - `starviewer/` — flies through the Gaia DR3 star catalog
@@ -57,23 +64,31 @@ hanging.
 
 ## A known limitation: fixed render distance
 
-`Raylib.jl` is pinned to raylib 4.0, which predates `rlSetClipPlanes` —
-there is no runtime API in this build to raise its far clip distance at
-all, and it's baked in at roughly 1000 world units. Since real km/parsecs
-can't be used as world units directly (a default camera altitude of
-20,000 km, or a star catalog spanning 50,000 pc, would be clipped away
-entirely), every position and size actually handed to raylib is scaled
-down by a fixed factor (`WORLD_UNIT_KM` in `earthviewer/geo.jl`,
-`WORLD_UNIT_PC` in `starviewer/render.jl`). Altitude, flight speed, and
-the HUD display all stay in real, unscaled km/parsecs — this is invisible
-in normal use, but explains why those two constants exist if you're
-reading the source.
+Still present after the raylib 6.0 upgrade, for a more specific reason
+than before. raylib 6.0 itself did add a real runtime API for this —
+`rlSetClipPlanes(near, far)`, in `rlgl.h` — but `Raylib.jl`'s binding
+generator has never parsed `rlgl.h` at all, only `raylib.h`/`raygui.h`/
+`raymath.h` (true on 4.0 and still true on 6.0), so that function isn't
+reachable from Julia either way. The far clip distance is therefore
+still effectively fixed at raylib's compile-time default
+(`RL_CULL_DISTANCE_FAR`, ~1000 world units). Since real km/parsecs can't
+be used as world units directly (a default camera altitude of 20,000 km,
+or a star catalog spanning 50,000 pc, would be clipped away entirely),
+every position and size actually handed to raylib is scaled down by a
+fixed factor (`WORLD_UNIT_KM` in `earthviewer/geo.jl`, `WORLD_UNIT_PC` in
+`starviewer/render.jl`). Altitude, flight speed, and the HUD display all
+stay in real, unscaled km/parsecs — this is invisible in normal use, but
+explains why those two constants exist if you're reading the source.
+Actually removing this limitation would mean adding `rlgl.h` parsing to
+`Raylib.jl` itself — a real upstream gap, not something this version
+bump alone fixes.
 
 The star viewer also renders stars as batched dynamic meshes rather than
-`viewer.c`'s raw `rlBegin(RL_QUADS)`/`rlVertex3f` immediate-mode calls
-(which this raylib 4.0 build mishandles once a frame's star count exceeds
-its internal vertex batch capacity) — see `starviewer/render.jl` for
-details.
+`viewer.c`'s raw `rlBegin(RL_QUADS)`/`rlVertex3f` immediate-mode calls —
+found under raylib 4.0 to be necessary because that build mishandled
+overflowing its internal vertex batch capacity (see `starviewer/render.jl`
+for details); not re-verified against 6.0, since the batched approach
+works regardless and there's been no reason to revisit it.
 
 ## Automated visual smoke tests
 

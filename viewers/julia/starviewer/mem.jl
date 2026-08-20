@@ -15,8 +15,11 @@ end
 # every frame, to draw only the filled prefix of a batch) means
 # rebuilding the whole struct. Mirrors earthviewer/dots.jl's helper of
 # the same name.
+# raylib 6.0's Mesh gained boneCount and reordered bone*/anim* fields
+# (boneIds -> boneIndices) relative to the 4.0 layout this was written against.
 with_triangle_count(mesh::Raylib.RayMesh, tc::Integer) = Raylib.RayMesh(
     mesh.vertexCount, Cint(tc), mesh.vertices, mesh.texcoords, mesh.texcoords2,
-    mesh.normals, mesh.tangents, mesh.colors, mesh.indices, mesh.animVertices,
-    mesh.animNormals, mesh.boneIds, mesh.boneWeights, mesh.vaoId, mesh.vboId,
+    mesh.normals, mesh.tangents, mesh.colors, mesh.indices, mesh.boneCount,
+    mesh.boneIndices, mesh.boneWeights, mesh.animVertices, mesh.animNormals,
+    mesh.vaoId, mesh.vboId,
 )
